@@ -528,9 +528,10 @@ public abstract class SAMAlignment implements Alignment {
 
     private String getValueStringImpl(double position, boolean truncate) {
 
+        int basePosition = (int) position;
         StringBuffer buf = new StringBuffer();
 
-        buf.append("Read name = " + getReadName() + "<br>");
+        buf.append(getReadName() + "<br><br>");
 
         String sample = getSample();
         if (sample != null) {
@@ -540,6 +541,8 @@ public abstract class SAMAlignment implements Alignment {
         if (readGroup != null) {
             buf.append("Read group = " + readGroup + "<br>");
         }
+        buf.append("Read length = " + Globals.DECIMAL_FORMAT.format(getReadLength()) + "bp<br>");
+
 
        
         String cigarString = getCigarString();
@@ -566,18 +569,21 @@ public abstract class SAMAlignment implements Alignment {
             rclipSoft = rclipMatcher.group(2) == null ? 0 : Integer.parseInt(rclipMatcher.group(2),10);
         }
 
-        buf.append("----------------------" + "<br>");
-        int basePosition = (int) position;
-        buf.append("Location = " + getChr() + ":" + Globals.DECIMAL_FORMAT.format(1 + (long) position) + "<br>");
-        buf.append("Alignment start = " + Globals.DECIMAL_FORMAT.format(getAlignmentStart() + 1) + " (" + (isNegativeStrand() ? "-" : "+") + ")<br>");
+        buf.append("<br>");
+        buf.append("Mapping = " + (isPrimary() ? (isSupplementary() ? "Supplementary" : "Primary") : "Secondary") +
+            (isDuplicate() ? " Duplicate" : "") + (isVendorFailedRead() ? " Failed QC" : "") +
+            " @ MAPQ " + Globals.DECIMAL_FORMAT.format(getMappingQuality()) + "<br>");
+        buf.append("Reference span = " + getChr() + ":" + Globals.DECIMAL_FORMAT.format(getAlignmentStart() + 1) + "-" +
+            Globals.DECIMAL_FORMAT.format(getAlignmentEnd()) + "(" + (isNegativeStrand() ? "-" : "+") + ")" +
+            " = " + Globals.DECIMAL_FORMAT.format(getAlignmentEnd()-getAlignmentStart()) + "bp<br>");
         buf.append("Cigar = " + cigarString + "<br>");
-        buf.append("Clipping = ");
+        buf.append("Clipped = ");
         if (lclipHard + lclipSoft + rclipHard + rclipSoft == 0) {
-            buf.append("None");
+            buf.append("no");
         }
         else {
             if (lclipHard + lclipSoft > 0) {
-                buf.append("Left");
+                buf.append("left");
                 if (lclipHard > 0) {
                     buf.append(" " + Globals.DECIMAL_FORMAT.format(lclipHard) + " hard");
                 }
@@ -586,7 +592,7 @@ public abstract class SAMAlignment implements Alignment {
                 }
             }
             if (rclipHard + rclipSoft > 0) {
-                buf.append((lclipHard + lclipSoft > 0 ? "; " : "") + "Right");
+                buf.append((lclipHard + lclipSoft > 0 ? "; " : "") + "right");
                 if (rclipHard > 0) {
                     buf.append(" " + Globals.DECIMAL_FORMAT.format(rclipHard) + " hard");
                 }
@@ -596,13 +602,7 @@ public abstract class SAMAlignment implements Alignment {
             }
         }
         buf.append("<br>");
-        buf.append("Mapped = " + (isMapped() ? "yes" : "no") + "<br>");
-        buf.append("Mapping quality = " + getMappingQuality() + "<br>");
-        buf.append("Secondary = " + (isPrimary() ? "no" : "yes") + "<br>");
-        buf.append("Supplementary = " + (isSupplementary() ? "yes" : "no") + "<br>");
-        buf.append("Duplicate = " + (isDuplicate() ? "yes" : "no") + "<br>");
-        buf.append("Failed QC = " + (isVendorFailedRead() ? "yes" : "no") + "<br>");
-        buf.append("----------------------<br>");
+        buf.append("<br>");
 
         // First check insertions.  Position is zero based, block coords 1 based
         if (this.insertions != null) {
@@ -630,7 +630,6 @@ public abstract class SAMAlignment implements Alignment {
                                 bufAppendFlowSignals(block, buf, offset);
                             }
                         }
-                        buf.append("----------------------"); // NB: no <br> required
                         return buf.toString();
                     } else {
                         byte[] bases = block.getBases();
@@ -656,8 +655,8 @@ public abstract class SAMAlignment implements Alignment {
                 }
 
                 byte quality = block.getQuality(offset);
-                buf.append("Base = " + (char) base + "<br>");
-                buf.append("Base phred quality = " + quality + "<br>");
+                buf.append("Location = " + getChr() + ":" + Globals.DECIMAL_FORMAT.format(1 + (long) position) + "<br>");
+                buf.append("Base = " + (char) base + " @ QV " + Globals.DECIMAL_FORMAT.format(quality) + "<br>");
 
                 // flow signals
                 if (block.hasFlowSignals()) {
@@ -668,7 +667,7 @@ public abstract class SAMAlignment implements Alignment {
         }
 
         if (this.isPaired()) {
-            buf.append("----------------------<br>");
+            buf.append("<br>");
             buf.append("Mate is mapped = " + (getMate().isMapped() ? "yes" : "no") + "<br>");
             if (getMate().isMapped()) {
                 buf.append("Mate start = " + getMate().positionString() + "<br>");
@@ -690,13 +689,12 @@ public abstract class SAMAlignment implements Alignment {
 
         String attributeString = getAttributeString(truncate);
         if (attributeString != null && attributeString.length() > 0) {
-            buf.append("----------------------");
             buf.append(getAttributeString(truncate));
         }
 
 
         if (mateSequence != null) {
-            buf.append("----------------------<br>");
+            buf.append("<br>");
             buf.append("Mate sequence: " + mateSequence);
         }
         return buf.toString();

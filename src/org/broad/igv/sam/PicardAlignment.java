@@ -277,7 +277,6 @@ public class PicardAlignment extends SAMAlignment implements Alignment {
                 }
 
             }
-            buf.append("<br>-------------------");
         }
         return buf.toString();
     }
