@@ -234,6 +234,11 @@ public class PicardAlignment extends SAMAlignment implements Alignment {
         if (attributes != null && !attributes.isEmpty()) {
 
             for (SAMRecord.SAMTagAndValue tag : attributes) {
+                // skip the read group (RG) tag, as it is handled as a special case
+                if (tag.tag.equals("RG")) { continue; }
+                // skip the verbose and not human-readable MD and SA tags
+                if (tag.tag.equals("MD") || tag.tag.equals("SA")) { continue; }
+
                 buf.append("<br>" + tag.tag + " = ");
 
                 if (tag.value.getClass().isArray()) { // ignore array types
