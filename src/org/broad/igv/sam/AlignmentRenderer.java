@@ -780,10 +780,8 @@ public class AlignmentRenderer implements FeatureRenderer {
             }
         }
 
-        // Render insertions if locScale < 1 bp / pixel (base level)
-        if (locScale < 1) {
-            drawInsertions(origin, rowRect, locScale, alignment, context, renderOptions);
-        }
+        // Render insertions.
+        drawInsertions(origin, rowRect, locScale, alignment, context, renderOptions);
 
 
         //Draw straight line up for viewing arc pairs, if mate on a different chromosome
@@ -1081,10 +1079,13 @@ public class AlignmentRenderer implements FeatureRenderer {
                     gInsertion.fillRect(x - 3, y, 6, h);
                     gInsertion.fillRect(x - 5, y + h - 2, 10, 2);
                 } else {
-                    Graphics2D gInsertion = context.getGraphic2DForColor(purple);
-                    gInsertion.fillRect(x - 2, y, 4, 2);
-                    gInsertion.fillRect(x - 1, y, 2, h);
-                    gInsertion.fillRect(x - 2, y + h - 2, 4, 2);
+                    // Only render "small" insertions if locScale < 1 bp / pixel (base level)
+                    if (locScale < 1) {
+                        Graphics2D gInsertion = context.getGraphic2DForColor(purple);
+                        gInsertion.fillRect(x - 2, y, 4, 2);
+                        gInsertion.fillRect(x - 1, y, 2, h);
+                        gInsertion.fillRect(x - 2, y + h - 2, 4, 2);
+                    }
                 }
             }
         }
