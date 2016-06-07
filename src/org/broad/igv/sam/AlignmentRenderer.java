@@ -26,6 +26,7 @@
 package org.broad.igv.sam;
 
 import org.apache.log4j.Logger;
+import org.broad.igv.Globals;
 import org.broad.igv.PreferenceManager;
 import org.broad.igv.feature.Strand;
 import org.broad.igv.feature.genome.Genome;
@@ -47,6 +48,7 @@ import org.broad.igv.util.ChromosomeColors;
 import java.awt.*;
 import java.awt.geom.GeneralPath;
 import java.awt.geom.QuadCurve2D;
+import java.awt.geom.Rectangle2D;
 import java.util.*;
 import java.util.List;
 
@@ -517,6 +519,59 @@ public class AlignmentRenderer implements FeatureRenderer {
     }
 
     /**
+     * Draw a rounded rectangle label with autosized width, provided that the label fits in the
+     * available space.  Return whether the label is drawn.
+     *
+     *
+     * @param g         graphics canvas on which to draw
+     * @param fgColor   text color
+     * @param bgColor   background color
+     * @param labelText text to display in the label
+     * @param pXCenter  X-coordinate (in pixels) at which to center the label
+     * @param pTop      Y-coordinate (in pixels) for the top of the label
+     * @param pH        height of the label (in pixels)
+     * @param pXPad     horizontal padding (in pixels)
+     * @param pMaxW     maximum permitted width (in pixels)
+    */
+    public boolean drawRoundRectLabel(Graphics g, Color fgColor, Color bgColor, String labelText, int pXCenter, int pTop, int pH, int pXPad, int pMaxW) {
+        Graphics2D gText = (Graphics2D) g.create();
+
+        // Set the font to be bold and to use the available height.
+        if (PreferenceManager.getInstance().getAsBoolean(PreferenceManager.ENABLE_ANTIALISING)) {
+            gText.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+        }
+        Font f = FontManager.getFont(Font.BOLD, pH - 2);
+        gText.setFont(f);
+
+        // Calculate the width required to draw the label, including padding.
+        FontMetrics fontMetrics = gText.getFontMetrics();
+        Rectangle2D textBounds = fontMetrics.getStringBounds(labelText, gText);
+        int pW = (int) textBounds.getWidth() + 2*pXPad;
+
+        // If the label is too wide then do not draw and return `false`.
+        if (pW > pMaxW) {
+            return false;
+        }
+
+        // Calculate the pixel left coordinate of the label.
+        int pLeft = pXCenter - (int) (pW / 2);
+
+        // Draw and fill the rounded rectangle.
+        Graphics gBg = gText.create();
+        if (bgColor != null) {
+            gBg.setColor(bgColor);
+            gBg.fillRoundRect(pLeft, pTop, pW, pH, pXPad, pH);
+        }
+
+        // Draw the label text.
+        int pBaseline = pTop + pH - 2;
+        gText.setColor(fgColor);
+        gText.drawString(labelText, pLeft + pXPad, pBaseline);
+
+        return true;
+    }
+
+    /**
      * Draw a (possibly gapped) alignment
      *
      * @param alignment
@@ -769,6 +824,15 @@ public class AlignmentRenderer implements FeatureRenderer {
                     gLine.drawLine(startX, y + h / 2, endX, y + h / 2);
                     if (stroke != null) {
                         gLine.setStroke(stroke);
+                    }
+                    // Draw a rounded rectangle label centered in the gap line to indicate
+                    // the size of the deletion (for deletions > 1bp), but only if the label
+                    // leaves enough of the gap line visible to the left and right.
+                    if (gap.getnBases() > 1) {
+                        String labelText =  Globals.DECIMAL_FORMAT.format(gap.getnBases());
+                        int centerX = (int) ((startX+endX)/2);
+                        int maxW = endX - startX - 10; // require at least 5px of gap line on left and right
+                        drawRoundRectLabel(gLine, purple, Color.white, labelText, centerX, y-1, h, 3, maxW);
                     }
                 }
 
@@ -1074,10 +1138,9 @@ public class AlignmentRenderer implements FeatureRenderer {
 
                 if (renderOptions.isFlagLargeInsertions() &&
                         aBlock.getBases().length > renderOptions.getLargeInsertionsThreshold()) {
-                    Graphics2D gInsertion = context.getGraphic2DForColor(Color.red);
-                    gInsertion.fillRect(x - 5, y, 10, 2);
-                    gInsertion.fillRect(x - 3, y, 6, h);
-                    gInsertion.fillRect(x - 5, y + h - 2, 10, 2);
+                    Graphics2D gInsertion = (Graphics2D) context.getGraphics().create();
+                    String labelText =  Globals.DECIMAL_FORMAT.format(aBlock.getBases().length);
+                    drawRoundRectLabel(gInsertion, Color.white, purple, labelText, x, y-1, h, 3, Integer.MAX_VALUE);
                 } else {
                     // Only render "small" insertions if locScale < 1 bp / pixel (base level)
                     if (locScale < 1) {
