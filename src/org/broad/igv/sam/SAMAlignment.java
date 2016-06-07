@@ -512,7 +512,7 @@ public abstract class SAMAlignment implements Alignment {
                 }
                 buf.append("<br>").append(spos);
                 buf.append("<br>");
-                // maybe also add flow order?                
+                // maybe also add flow order?
             }
         }
     }
@@ -524,6 +524,21 @@ public abstract class SAMAlignment implements Alignment {
 
     public String getValueString(double position, WindowFunction windowFunction) {
         return getValueStringImpl(position, true);
+    }
+
+    private String lineWrapString(String input, int maxCharsPerLine) {
+        int length = input.length();
+        StringBuffer buf = new StringBuffer();
+
+        for (int i = 0; i < length; i += maxCharsPerLine) {
+            int end = Math.min(length, i + maxCharsPerLine);
+            buf.append(input.substring(i, end));
+            if (end < length) {
+                buf.append("<br>");
+            }
+        }
+
+        return buf.toString();
     }
 
     private String getValueStringImpl(double position, boolean truncate) {
@@ -544,7 +559,7 @@ public abstract class SAMAlignment implements Alignment {
         buf.append("Read length = " + Globals.DECIMAL_FORMAT.format(getReadLength()) + "bp<br>");
 
 
-       
+
         String cigarString = getCigarString();
         // Abbreviate long CIGAR strings.  Retain the start and end of the CIGAR, which show
         // clipping; trim the middle.
@@ -613,7 +628,7 @@ public abstract class SAMAlignment implements Alignment {
                     if (block.hasFlowSignals()) {
                         int offset;
                         buf = new StringBuffer();
-                        buf.append("Insertion: " + new String(block.getBases()) + "<br>");
+                        buf.append("Insertion: " + lineWrapString(new String(block.getBases()), 100) + "<br>");
                         buf.append("Base phred quality = ");
                         for (offset = 0; offset < block.getLength(); offset++) {
                             byte quality = block.getQuality(offset);
@@ -636,7 +651,7 @@ public abstract class SAMAlignment implements Alignment {
 
                         return bases == null ?
                                 "Insertion: " + block.getLength() + " bases" :
-                                "Insertion: " + new String(block.getBases());
+                                "Insertion: " + lineWrapString(new String(block.getBases()), 100);
                     }
                 }
             }
