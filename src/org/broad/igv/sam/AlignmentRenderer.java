@@ -940,7 +940,7 @@ public class AlignmentRenderer implements FeatureRenderer {
         // Compute bounds, get a graphics to use,  and compute a font
         int pY = (int) rect.getY();
         int dY = (int) rect.getHeight();
-        int dX = (int) Math.max(1, (1.0 / locScale));
+        int dX = Math.max(1, (int) (1.0 / locScale));
         Graphics2D g = (Graphics2D) context.getGraphics().create();
         if (PreferenceManager.getInstance().getAsBoolean(PreferenceManager.ENABLE_ANTIALISING)) {
             g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
