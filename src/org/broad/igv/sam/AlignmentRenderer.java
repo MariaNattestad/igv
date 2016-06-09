@@ -785,7 +785,7 @@ public class AlignmentRenderer implements FeatureRenderer {
             for (Gap gap : alignment.getGaps()) {
 
                 int gapStart = (int) ((gap.getStart() - origin) / locScale);
-                int gapWidth = (int) Math.ceil(gap.getnBases() / locScale);
+                int gapWidth = (int) Math.round(gap.getnBases() / locScale);
 
                 // If block is out of view skip -- this is important in the case of PacBio and other platforms with very long reads
                 if (gapStart + gapWidth >= rowRect.x && gapStart <= rowRect.getMaxX()) {
@@ -812,27 +812,29 @@ public class AlignmentRenderer implements FeatureRenderer {
                             break;
                     }
 
-
-                    gLine = context.getGraphic2DForColor(gapLineColor);
-                    if (gapStroke != null) {
-                        stroke = gLine.getStroke();
-                        gLine.setStroke(thickStroke);
-                    }
-
                     int startX = Math.max(rowRect.x, gapStart);
                     int endX = Math.min(rowRect.x + rowRect.width, gapStart + gapWidth);
-                    gLine.drawLine(startX, y + h / 2, endX, y + h / 2);
-                    if (stroke != null) {
-                        gLine.setStroke(stroke);
-                    }
-                    // Draw a rounded rectangle label centered in the gap line to indicate
-                    // the size of the deletion (for deletions > 1bp), but only if the label
-                    // leaves enough of the gap line visible to the left and right.
-                    if (gap.getnBases() > 1) {
-                        String labelText =  Globals.DECIMAL_FORMAT.format(gap.getnBases());
-                        int centerX = (int) ((startX+endX)/2);
-                        int maxW = endX - startX - 10; // require at least 5px of gap line on left and right
-                        drawRoundRectLabel(gLine, purple, Color.white, labelText, centerX, y-1, h, 3, maxW);
+                    // Only draw gaps >= 2px.
+                    if (gapWidth >= 2) {
+                        gLine = context.getGraphic2DForColor(gapLineColor);
+                        if (gapStroke != null) {
+                            stroke = gLine.getStroke();
+                            gLine.setStroke(thickStroke);
+                        }
+                        gLine.drawLine(startX, y + h / 2, endX, y + h / 2);
+                        if (stroke != null) {
+                            gLine.setStroke(stroke);
+                        }
+
+                        // Draw a rounded rectangle label centered in the gap line to indicate
+                        // the size of the deletion (for deletions > 1bp), but only if the label
+                        // leaves enough of the gap line visible to the left and right.
+                        if (gap.getnBases() > 1) {
+                            String labelText =  Globals.DECIMAL_FORMAT.format(gap.getnBases());
+                            int centerX = (int) ((startX+endX)/2);
+                            int maxW = endX - startX - 10; // require at least 5px of gap line on left and right
+                            drawRoundRectLabel(gLine, purple, Color.white, labelText, centerX, y-1, h, 3, maxW);
+                        }
                     }
                 }
 
