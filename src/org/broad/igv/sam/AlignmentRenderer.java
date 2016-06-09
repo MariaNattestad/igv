@@ -33,6 +33,7 @@ import org.broad.igv.feature.genome.Genome;
 import org.broad.igv.feature.genome.GenomeManager;
 import org.broad.igv.renderer.ContinuousColorScale;
 import org.broad.igv.renderer.GraphicUtils;
+import org.broad.igv.sam.AlignmentCounts;
 import org.broad.igv.sam.AlignmentTrack.ColorOption;
 import org.broad.igv.sam.AlignmentTrack.RenderOptions;
 import org.broad.igv.sam.AlignmentTrack.ShadeBasesOption;
@@ -279,7 +280,8 @@ public class AlignmentRenderer implements FeatureRenderer {
                                  Rectangle rowRect,
                                  Rectangle trackRect, RenderOptions renderOptions,
                                  boolean leaveMargin,
-                                 Map<String, Color> selectedReadNames) {
+                                 Map<String, Color> selectedReadNames,
+                                 AlignmentCounts alignmentCounts) {
 
         double origin = context.getOrigin();
         double locScale = context.getScale();
@@ -331,12 +333,12 @@ public class AlignmentRenderer implements FeatureRenderer {
                     g.fillRect((int) pixelStart, y, w, h);
                     lastPixelDrawn = (int) pixelStart + w;
                 } else if (alignment instanceof PairedAlignment) {
-                    drawPairedAlignment((PairedAlignment) alignment, rowRect, trackRect, context, renderOptions, leaveMargin, selectedReadNames, font);
+                    drawPairedAlignment((PairedAlignment) alignment, rowRect, trackRect, context, renderOptions, leaveMargin, selectedReadNames, alignmentCounts, font);
                 } else {
                     Color alignmentColor = getAlignmentColor(alignment, renderOptions);
                     Graphics2D g = context.getGraphic2DForColor(alignmentColor);
                     g.setFont(font);
-                    drawAlignment(alignment, rowRect, trackRect, g, context, alignmentColor, renderOptions, leaveMargin, selectedReadNames);
+                    drawAlignment(alignment, rowRect, trackRect, g, context, alignmentColor, renderOptions, leaveMargin, selectedReadNames, alignmentCounts);
                 }
             }
 
@@ -436,6 +438,7 @@ public class AlignmentRenderer implements FeatureRenderer {
             AlignmentTrack.RenderOptions renderOptions,
             boolean leaveMargin,
             Map<String, Color> selectedReadNames,
+            AlignmentCounts alignmentCounts,
             Font font) {
 
         //Only plot outliers
@@ -457,7 +460,7 @@ public class AlignmentRenderer implements FeatureRenderer {
 
         Graphics2D g = context.getGraphic2DForColor(alignmentColor1);
         g.setFont(font);
-        drawAlignment(pair.firstAlignment, rowRect, trackRect, g, context, alignmentColor1, renderOptions, leaveMargin, selectedReadNames);
+        drawAlignment(pair.firstAlignment, rowRect, trackRect, g, context, alignmentColor1, renderOptions, leaveMargin, selectedReadNames, alignmentCounts);
 
         //If the paired alignment is in memory, we draw it.
         //However, we get the coordinates from the first alignment
@@ -468,7 +471,7 @@ public class AlignmentRenderer implements FeatureRenderer {
             }
             g = context.getGraphic2DForColor(alignmentColor2);
 
-            drawAlignment(pair.secondAlignment, rowRect, trackRect, g, context, alignmentColor2, renderOptions, leaveMargin, selectedReadNames);
+            drawAlignment(pair.secondAlignment, rowRect, trackRect, g, context, alignmentColor2, renderOptions, leaveMargin, selectedReadNames, alignmentCounts);
         } else {
             return;
         }
@@ -583,6 +586,7 @@ public class AlignmentRenderer implements FeatureRenderer {
      * @param renderOptions
      * @param leaveMargin
      * @param selectedReadNames
+     * @param alignmentCounts
      */
     private void drawAlignment(
             Alignment alignment,
@@ -593,7 +597,8 @@ public class AlignmentRenderer implements FeatureRenderer {
             Color alignmentColor,
             AlignmentTrack.RenderOptions renderOptions,
             boolean leaveMargin,
-            Map<String, Color> selectedReadNames) {
+            Map<String, Color> selectedReadNames,
+            AlignmentCounts alignmentCounts) {
 
         double origin = context.getOrigin();
         double locScale = context.getScale();
@@ -719,7 +724,7 @@ public class AlignmentRenderer implements FeatureRenderer {
             if ((locScale < 5) || (AlignmentTrack.isBisulfiteColorType(renderOptions.getColorOption()) && (locScale < 100))) // Is 100 here going to kill some machines? bpb
             {
                 if (renderOptions.showMismatches || renderOptions.showAllBases) {
-                    drawBases(context, rowRect, alignment, aBlock, alignmentColor, renderOptions);
+                    drawBases(context, rowRect, alignment, aBlock, alignmentCounts, alignmentColor, renderOptions);
                 }
             }
 
@@ -873,6 +878,7 @@ public class AlignmentRenderer implements FeatureRenderer {
      * @param rect
      * @param baseAlignment
      * @param block
+     * @param alignmentCounts
      * @param alignmentColor
      * @param renderOptions
      */
@@ -880,6 +886,7 @@ public class AlignmentRenderer implements FeatureRenderer {
                            Rectangle rect,
                            Alignment baseAlignment,
                            AlignmentBlock block,
+                           AlignmentCounts alignmentCounts,
                            Color alignmentColor,
                            RenderOptions renderOptions) {
 
@@ -941,7 +948,10 @@ public class AlignmentRenderer implements FeatureRenderer {
         }
 
 
-        for (int loc = start; loc < end; loc++) {
+        // Loop over the bases in the alignment block that fall within the visible context.
+        int contextChrStart = (int) context.getOrigin();
+        int contextChrEnd = (int) context.getEndLocation();
+        for (int loc = Math.max(start, contextChrStart); loc < Math.min(end, contextChrEnd); loc++) {
             int idx = loc - start;
 
             boolean misMatch = haveBases && AlignmentUtils.isMisMatch(reference, read, isSoftClipped, idx);
@@ -979,7 +989,12 @@ public class AlignmentRenderer implements FeatureRenderer {
                 }
 
                 BisulfiteBaseInfo.DisplayStatus bisstatus = (bisinfo == null) ? null : bisinfo.getDisplayStatus(idx);
-                drawBase(g, color, c, pX, pY, dX, dY, bisulfiteMode, bisstatus);
+
+                // at high zoom (locScale < 0.2), show all mismatches;
+                // at low zoom, display only recurrent mismatches, which creates a "visual consensus"
+                if (locScale < 0.2 || alignmentCounts.isMismatch(loc, reference[idx], chr, renderOptions.samAlleleThreshold)) {
+                    drawBase(g, color, c, pX, pY, dX, dY, bisulfiteMode, bisstatus);
+                }
             }
         }
 
