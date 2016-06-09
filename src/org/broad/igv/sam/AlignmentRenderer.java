@@ -1142,8 +1142,8 @@ public class AlignmentRenderer implements FeatureRenderer {
                     String labelText =  Globals.DECIMAL_FORMAT.format(aBlock.getBases().length);
                     drawRoundRectLabel(gInsertion, Color.white, purple, labelText, x, y-1, h, 3, Integer.MAX_VALUE);
                 } else {
-                    // Only render "small" insertions if locScale < 1 bp / pixel (base level)
-                    if (locScale < 1) {
+                    // Only render "small" insertions if zoomed in to > 5 pixels per base pair.
+                    if (locScale < 0.2) {
                         Graphics2D gInsertion = context.getGraphic2DForColor(purple);
                         gInsertion.fillRect(x - 2, y, 4, 2);
                         gInsertion.fillRect(x - 1, y, 2, h);
