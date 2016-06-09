@@ -771,7 +771,7 @@ public class AlignmentRenderer implements FeatureRenderer {
             for (Gap gap : alignment.getGaps()) {
 
                 int gapStart = (int) ((gap.getStart() - origin) / locScale);
-                int gapWidth = (int) Math.round(gap.getnBases() / locScale);
+                int gapWidth = (int) Math.ceil(gap.getnBases() / locScale);
 
                 // If block is out of view skip -- this is important in the case of PacBio and other platforms with very long reads
                 if (gapStart + gapWidth >= rowRect.x && gapStart <= rowRect.getMaxX()) {
@@ -800,8 +800,15 @@ public class AlignmentRenderer implements FeatureRenderer {
 
                     int startX = Math.max(rowRect.x, gapStart);
                     int endX = Math.min(rowRect.x + rowRect.width, gapStart + gapWidth);
-                    // Only draw gaps >= 2px.
-                    if (gapWidth >= 2) {
+                    // Only draw gaps that are large in pixels (>= 3px) or in basepairs (> large insertions threshold).
+                    boolean isLargeDeletion = gap.getnBases() > renderOptions.getLargeInsertionsThreshold();
+                    if ((gapWidth < 3) && !isLargeDeletion) {
+                        if (gapWidth > 0) {
+                            Shape gapFillShape = new Rectangle(gapStart, y, gapWidth, h);
+                            g.fill(gapFillShape);
+                        }
+                    }
+                    else {
                         gLine = context.getGraphic2DForColor(gapLineColor);
                         if (gapStroke != null) {
                             stroke = gLine.getStroke();
@@ -813,12 +820,13 @@ public class AlignmentRenderer implements FeatureRenderer {
                         }
 
                         // Draw a rounded rectangle label centered in the gap line to indicate
-                        // the size of the deletion (for deletions > 1bp), but only if the label
-                        // leaves enough of the gap line visible to the left and right.
+                        // the size of the deletion (for deletions > 1bp).
+                        // For large deletions, always show the label.
+                        // For small deletions, only show the label when it fits in the gap line.
                         if (gap.getnBases() > 1) {
                             String labelText =  Globals.DECIMAL_FORMAT.format(gap.getnBases());
                             int centerX = (int) ((startX+endX)/2);
-                            int maxW = endX - startX - 10; // require at least 5px of gap line on left and right
+                            int maxW = isLargeDeletion ? Integer.MAX_VALUE : endX - startX - 10; // 5px on left and right
                             drawRoundRectLabel(gLine, purple, Color.white, labelText, centerX, y-1, h, 3, maxW);
                         }
                     }
