@@ -721,8 +721,7 @@ public class AlignmentRenderer implements FeatureRenderer {
 
             }
 
-            if ((locScale < 5) || (AlignmentTrack.isBisulfiteColorType(renderOptions.getColorOption()) && (locScale < 100))) // Is 100 here going to kill some machines? bpb
-            {
+            if (locScale < 100) {
                 if (renderOptions.showMismatches || renderOptions.showAllBases) {
                     drawBases(context, rowRect, alignment, aBlock, alignmentCounts, alignmentColor, renderOptions);
                 }
