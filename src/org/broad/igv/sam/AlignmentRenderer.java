@@ -618,13 +618,17 @@ public class AlignmentRenderer implements FeatureRenderer {
 
         boolean highZoom = locScale < 0.1251;
 
-        // Get a graphics context for outlining reads
-        Graphics2D outlineGraphics = context.getGraphic2DForColor(OUTLINE_COLOR);
-        Graphics2D terminalGrpahics = context.getGraphic2DForColor(Color.DARK_GRAY);
-
         boolean isZeroQuality = alignment.getMappingQuality() == 0 && renderOptions.flagZeroQualityAlignments;
         int h = (int) Math.max(1, rowRect.getHeight() - (leaveMargin ? 2 : 0));
         int y = (int) (rowRect.getY());
+
+        // Get a graphics context for outlining reads
+        Graphics2D outlineGraphics = context.getGraphic2DForColor(OUTLINE_COLOR);
+        Graphics2D terminalGrpahics = context.getGraphic2DForColor(Color.DARK_GRAY);
+        AlignmentBlock firstBlock = blocks[0], lastBlock = blocks[blocks.length - 1];
+        int alignmentPixelStart = (int) ((firstBlock.getStart() - origin) / locScale);
+        int alignmentPixelWidth = (int) ((lastBlock.getStart() + lastBlock.getLength() - firstBlock.getStart()) / locScale);
+        Shape outlineShape = new Rectangle(alignmentPixelStart, y, alignmentPixelWidth, h);
 
         for (AlignmentBlock aBlock : alignment.getAlignmentBlocks()) {
 
@@ -668,14 +672,18 @@ public class AlignmentRenderer implements FeatureRenderer {
                         }
 
                         int[] xPoly;
+                        int[] xOutlinePoly;
                         int[] yPoly = {y, y, y + h / 2, y + h, y + h};
 
                         if (alignment.isNegativeStrand()) {
                             xPoly = new int[]{blockPixelStart + blockPixelWidth, blockPixelStart, blockPixelStart - arrowLength, blockPixelStart, blockPixelStart + blockPixelWidth};
+                            xOutlinePoly = new int[]{blockPixelStart + alignmentPixelWidth, blockPixelStart, blockPixelStart - arrowLength, blockPixelStart, blockPixelStart + alignmentPixelWidth};
                         } else {
                             xPoly = new int[]{blockPixelStart, blockPixelStart + blockPixelWidth, blockPixelStart + blockPixelWidth + arrowLength, blockPixelStart + blockPixelWidth, blockPixelStart};
+                            xOutlinePoly = new int[]{alignmentPixelStart, blockPixelStart + blockPixelWidth, blockPixelStart + blockPixelWidth + arrowLength, blockPixelStart + blockPixelWidth, alignmentPixelStart};
                         }
                         blockShape = new Polygon(xPoly, yPoly, xPoly.length);
+                        outlineShape = new Polygon(xOutlinePoly, yPoly, xOutlinePoly.length);
                     } else {
                         // Terminal block, but not enough height for arrow.  Indicate with a line
                         int tH = Math.max(1, h - 1);
@@ -693,32 +701,6 @@ public class AlignmentRenderer implements FeatureRenderer {
                 }
 
                 g.fill(blockShape);
-
-                if (isZeroQuality) {
-                    outlineGraphics.draw(blockShape);
-                }
-
-                if (renderOptions.flagUnmappedPairs && alignment.isPaired() && !alignment.getMate().isMapped()) {
-                    Graphics2D cRed = context.getGraphic2DForColor(Color.red);
-                    cRed.draw(blockShape);
-                }
-
-                if (alignment.isSupplementary()) {
-                    context.getGraphic2DForColor(SUPPLEMENTARY_OUTLINE_COLOR).draw(blockShape);
-                }
-
-                if (selectedReadNames.containsKey(alignment.getReadName())) {
-                    Color c = selectedReadNames.get(alignment.getReadName());
-                    if (c == null) {
-                        c = Color.blue;
-                    }
-                    Graphics2D cBlue = context.getGraphic2DForColor(c);
-                    Stroke s = cBlue.getStroke();
-                    cBlue.setStroke(thickStroke);
-                    cBlue.draw(blockShape);
-                    cBlue.setStroke(s);
-                }
-
             }
 
             if (locScale < 100) {
@@ -852,6 +834,29 @@ public class AlignmentRenderer implements FeatureRenderer {
 
         // Render insertions.
         drawInsertions(origin, rowRect, locScale, alignment, context, renderOptions);
+
+        // Outline the full alignment, if appropriate.
+        if (alignment.isSupplementary()) {
+            context.getGraphic2DForColor(SUPPLEMENTARY_OUTLINE_COLOR).draw(outlineShape);
+        }
+        if (isZeroQuality) {
+            outlineGraphics.draw(outlineShape);
+        }
+        if (renderOptions.flagUnmappedPairs && alignment.isPaired() && !alignment.getMate().isMapped()) {
+            Graphics2D cRed = context.getGraphic2DForColor(Color.red);
+            cRed.draw(outlineShape);
+        }
+        if (selectedReadNames.containsKey(alignment.getReadName())) {
+            Color c = selectedReadNames.get(alignment.getReadName());
+            if (c == null) {
+                c = Color.blue;
+            }
+            Graphics2D cBlue = context.getGraphic2DForColor(c);
+            Stroke s = cBlue.getStroke();
+            cBlue.setStroke(thickStroke);
+            cBlue.draw(outlineShape);
+            cBlue.setStroke(s);
+        }
 
 
         //Draw straight line up for viewing arc pairs, if mate on a different chromosome
