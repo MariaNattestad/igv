@@ -703,12 +703,6 @@ public class AlignmentRenderer implements FeatureRenderer {
                 g.fill(blockShape);
             }
 
-            if (locScale < 100) {
-                if (renderOptions.showMismatches || renderOptions.showAllBases) {
-                    drawBases(context, rowRect, alignment, aBlock, alignmentCounts, alignmentColor, renderOptions);
-                }
-            }
-
             // Draw connecting lines between blocks, if in view
 //            if (lastBlockEnd > Integer.MIN_VALUE && blockPixelStart > rowRect.x) {
 //                Graphics2D gLine;
@@ -842,6 +836,13 @@ public class AlignmentRenderer implements FeatureRenderer {
 
         // Render insertions.
         drawInsertions(origin, rowRect, locScale, alignment, context, renderOptions);
+
+        // Draw base identities (after gaps and insertions to ensure the bases are on top)
+        if (locScale < 100 && (renderOptions.showMismatches || renderOptions.showAllBases)) {
+            for (AlignmentBlock aBlock : alignment.getAlignmentBlocks()) {
+                drawBases(context, rowRect, alignment, aBlock, alignmentCounts, alignmentColor, renderOptions);
+            }
+        }
 
         // Outline the full alignment, if appropriate.
         if (alignment.isSupplementary()) {
