@@ -66,7 +66,7 @@ abstract public class BaseAlignmentCounts implements AlignmentCounts {
 
         countDeletedBasesCovered = prefs.getAsBoolean(PreferenceManager.SAM_COUNT_DELETED_BASES_COVERED);
 
-        if (!Globals.isHeadless() && bisulfiteContext != null) {
+        if (!Globals.isHeadless() && bisulfiteContext == null) {
             bisulfiteCounts = new BisulfiteCounts(bisulfiteContext, GenomeManager.getInstance().getCurrentGenome());
         }
 
