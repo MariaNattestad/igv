@@ -562,6 +562,17 @@ public class AlignmentRenderer implements FeatureRenderer {
         Graphics2D outlineGraphics = context.getGraphic2DForColor(OUTLINE_COLOR);
         Graphics2D terminalGrpahics = context.getGraphic2DForColor(Color.DARK_GRAY);
 
+        // Get a graphics context for drawing basepairs (allocate once per alignment; reuse for each block).
+        Graphics2D bpGraphics = (Graphics2D) context.getGraphics().create();
+        int dX = (int) Math.max(1, (1.0 / locScale));
+        if (PreferenceManager.getInstance().getAsBoolean(PreferenceManager.ENABLE_ANTIALISING)) {
+            bpGraphics.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+        }
+        if (dX >= 8) {
+            Font f = FontManager.getFont(Font.BOLD, Math.min(dX, 12));
+            bpGraphics.setFont(f);
+        }
+
         boolean isZeroQuality = alignment.getMappingQuality() == 0 && renderOptions.flagZeroQualityAlignments;
         int h = (int) Math.max(1, rowRect.getHeight() - (leaveMargin ? 2 : 0));
         int y = (int) (rowRect.getY());
@@ -664,7 +675,7 @@ public class AlignmentRenderer implements FeatureRenderer {
             if ((locScale < 5) || (AlignmentTrack.isBisulfiteColorType(renderOptions.getColorOption()) && (locScale < 100))) // Is 100 here going to kill some machines? bpb
             {
                 if (renderOptions.showMismatches || renderOptions.showAllBases) {
-                    drawBases(context, rowRect, alignment, aBlock, alignmentColor, renderOptions);
+                    drawBases(context, bpGraphics, rowRect, alignment, aBlock, alignmentColor, renderOptions);
                 }
             }
 
@@ -806,6 +817,7 @@ public class AlignmentRenderer implements FeatureRenderer {
      * that is proportional to the base quality score, or flow signal deviation, whichever is selected.
      *
      * @param context
+     * @param g
      * @param rect
      * @param baseAlignment
      * @param block
@@ -813,6 +825,7 @@ public class AlignmentRenderer implements FeatureRenderer {
      * @param renderOptions
      */
     private void drawBases(RenderContext context,
+                           Graphics2D g,
                            Rectangle rect,
                            Alignment baseAlignment,
                            AlignmentBlock block,
@@ -854,18 +867,10 @@ public class AlignmentRenderer implements FeatureRenderer {
         double locScale = context.getScale();
         double origin = context.getOrigin();
 
-        // Compute bounds, get a graphics to use,  and compute a font
+        // Compute bounds for rendering.
         int pY = (int) rect.getY();
         int dY = (int) rect.getHeight();
         int dX = (int) Math.max(1, (1.0 / locScale));
-        Graphics2D g = (Graphics2D) context.getGraphics().create();
-        if (PreferenceManager.getInstance().getAsBoolean(PreferenceManager.ENABLE_ANTIALISING)) {
-            g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
-        }
-        if (dX >= 8) {
-            Font f = FontManager.getFont(Font.BOLD, Math.min(dX, 12));
-            g.setFont(f);
-        }
 
         BisulfiteBaseInfo bisinfo = null;
         boolean nomeseqMode = (renderOptions.getColorOption().equals(AlignmentTrack.ColorOption.NOMESEQ));
