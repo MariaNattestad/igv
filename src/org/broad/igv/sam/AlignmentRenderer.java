@@ -703,10 +703,8 @@ public class AlignmentRenderer implements FeatureRenderer {
                 blockPxStart, blockPxWidth, y, h, largeEnoughForArrow, arrowPxWidth);
         }
 
-        // Render insertions if locScale < 1 bp / pixel (base level)
-        if (locScale < 1) {
-            drawInsertions(contextChromStart, rowRect, locScale, alignment, context, renderOptions);
-        }
+        // Draw insertions.
+        drawInsertions(contextChromStart, rowRect, locScale, alignment, context, renderOptions);
 
         // Draw basepairs / mismatches.
         if (renderOptions.showMismatches || renderOptions.showAllBases) {
@@ -992,6 +990,8 @@ public class AlignmentRenderer implements FeatureRenderer {
 
         AlignmentBlock[] insertions = alignment.getInsertions();
         if (insertions != null) {
+            Graphics2D largeInsGraphics = null, smallInsGraphics = null;
+
             for (AlignmentBlock aBlock : insertions) {
                 int x = (int) ((aBlock.getStart() - origin) / locScale);
                 int h = (int) Math.max(1, rect.getHeight() - 2);
@@ -1004,17 +1004,22 @@ public class AlignmentRenderer implements FeatureRenderer {
                     continue;
                 }
 
+                int insWidth = aBlock.getBases().length;
                 if (renderOptions.isFlagLargeInsertions() &&
-                        aBlock.getBases().length > renderOptions.getLargeInsertionsThreshold()) {
-                    Graphics2D gInsertion = context.getGraphic2DForColor(Color.red);
-                    gInsertion.fillRect(x - 5, y, 10, 2);
-                    gInsertion.fillRect(x - 3, y, 6, h);
-                    gInsertion.fillRect(x - 5, y + h - 2, 10, 2);
+                        insWidth > renderOptions.getLargeInsertionsThreshold()) {
+                    largeInsGraphics = (largeInsGraphics != null) ? largeInsGraphics : context.getGraphic2DForColor(purple);
+                    largeInsGraphics.fillRect(x - 5, y, 10, 2);
+                    largeInsGraphics.fillRect(x - 3, y, 6, h);
+                    largeInsGraphics.fillRect(x - 5, y + h - 2, 10, 2);
                 } else {
-                    Graphics2D gInsertion = context.getGraphic2DForColor(purple);
-                    gInsertion.fillRect(x - 2, y, 4, 2);
-                    gInsertion.fillRect(x - 1, y, 2, h);
-                    gInsertion.fillRect(x - 2, y + h - 2, 4, 2);
+                    // Only draw "small" insertions when the insertion would consume more than 3px on the screen.
+                    int insertionPxWidth = (int) Math.max(1, insWidth / locScale);
+                    if (insertionPxWidth > 3) {
+                        smallInsGraphics = (smallInsGraphics != null) ? smallInsGraphics : context.getGraphic2DForColor(Color.red);
+                        smallInsGraphics.fillRect(x - 2, y, 4, 2);
+                        smallInsGraphics.fillRect(x - 1, y, 2, h);
+                        smallInsGraphics.fillRect(x - 2, y + h - 2, 4, 2);
+                    }
                 }
             }
         }
