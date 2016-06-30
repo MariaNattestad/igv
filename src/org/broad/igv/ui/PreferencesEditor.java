@@ -271,6 +271,7 @@ public class PreferencesEditor extends javax.swing.JDialog {
         samFlagUnmappedPairCB = new JCheckBox();
         filterFailedReadsCB = new JCheckBox();
         showSoftClippedCB = new JCheckBox();
+        consensusModeCB = new JCheckBox();
         filterSecondaryAlignmentsCB = new JCheckBox();
         showCenterLineCB = new JCheckBox();
         filterSupplementaryAlignmentsCB = new JCheckBox();
@@ -1670,15 +1671,15 @@ public class PreferencesEditor extends javax.swing.JDialog {
                             });
                             panel8.add(filterSecondaryAlignmentsCB);
 
-                            //---- showCenterLineCB ----
-                            showCenterLineCB.setText("Show center line");
-                            showCenterLineCB.addActionListener(new ActionListener() {
+                            //---- consensusModeCB ---
+                            consensusModeCB.setText("Consensus mode");
+                            consensusModeCB.addActionListener(new ActionListener() {
                                 @Override
                                 public void actionPerformed(ActionEvent e) {
-                                    showCenterLineCBActionPerformed(e);
+                                    consensusModeCBActionPerformed(e);
                                 }
                             });
-                            panel8.add(showCenterLineCB);
+                            panel8.add(consensusModeCB);
 
                             //---- filterSupplementaryAlignmentsCB ----
                             filterSupplementaryAlignmentsCB.setText("Filter supplementary alignments");
@@ -1689,6 +1690,16 @@ public class PreferencesEditor extends javax.swing.JDialog {
                                 }
                             });
                             panel8.add(filterSupplementaryAlignmentsCB);
+
+                            //---- showCenterLineCB ----
+                            showCenterLineCB.setText("Show center line");
+                            showCenterLineCB.addActionListener(new ActionListener() {
+                                @Override
+                                public void actionPerformed(ActionEvent e) {
+                                    showCenterLineCBActionPerformed(e);
+                                }
+                            });
+                            panel8.add(showCenterLineCB);
                         }
                         jPanel12.add(panel8);
                     }
@@ -3570,6 +3581,12 @@ public class PreferencesEditor extends javax.swing.JDialog {
                 String.valueOf(showSoftClippedCB.isSelected()));
     }
 
+    private void consensusModeCBActionPerformed(ActionEvent e) {
+        updatedPreferenceMap.put(
+                PreferenceManager.SAM_CONSENSUS_MODE,
+                String.valueOf(consensusModeCB.isSelected()));
+    }
+
 
     private void isizeComputeCBActionPerformed(ActionEvent e) {
         final boolean selected = isizeComputeCB.isSelected();
@@ -4427,6 +4444,7 @@ public class PreferencesEditor extends javax.swing.JDialog {
         filterSecondaryAlignmentsCB.setSelected(prefMgr.getAsBoolean(PreferenceManager.SAM_FILTER_SECONDARY_ALIGNMENTS));
         filterSupplementaryAlignmentsCB.setSelected(prefMgr.getAsBoolean(PreferenceManager.SAM_FILTER_SUPPLEMENTARY_ALIGNMENTS));
         showSoftClippedCB.setSelected(prefMgr.getAsBoolean(PreferenceManager.SAM_SHOW_SOFT_CLIPPED));
+        consensusModeCB.setSelected(prefMgr.getAsBoolean(PreferenceManager.SAM_CONSENSUS_MODE));
         samFlagUnmappedPairCB.setSelected(prefMgr.getAsBoolean(PreferenceManager.SAM_FLAG_UNMAPPED_PAIR));
         showCenterLineCB.setSelected(prefMgr.getAsBoolean(PreferenceManager.SAM_SHOW_CENTER_LINE));
         samShadeMismatchedBaseCB.setSelected(ShadeBasesOption.QUALITY ==
@@ -4709,6 +4727,7 @@ public class PreferencesEditor extends javax.swing.JDialog {
     private JCheckBox samFlagUnmappedPairCB;
     private JCheckBox filterFailedReadsCB;
     private JCheckBox showSoftClippedCB;
+    private JCheckBox consensusModeCB;
     private JCheckBox filterSecondaryAlignmentsCB;
     private JCheckBox showCenterLineCB;
     private JCheckBox filterSupplementaryAlignmentsCB;

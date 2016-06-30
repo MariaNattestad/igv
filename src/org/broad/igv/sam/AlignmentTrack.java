@@ -437,8 +437,9 @@ public class AlignmentTrack extends AbstractTrack implements AlignmentTrackEvent
 
                 if (y + h > visibleRect.getY()) {
                     Rectangle rowRectangle = new Rectangle(inputRect.x, (int) y, inputRect.width, (int) h);
+                    AlignmentCounts counts = dataManager.getLoadedInterval(context.getReferenceFrame().getCurrentRange()).getCounts();
                     renderer.renderAlignments(row.alignments, context, rowRectangle,
-                            inputRect, renderOptions, leaveMargin, selectedReadNames);
+                            inputRect, renderOptions, leaveMargin, selectedReadNames, counts);
                 }
                 y += h;
             }
@@ -1070,6 +1071,7 @@ public class AlignmentTrack extends AbstractTrack implements AlignmentTrackEvent
         GroupOption groupByOption = null;
         BisulfiteContext bisulfiteContext;
         //ContinuousColorScale insertSizeColorScale;
+        public float samAlleleThreshold = 0;
         private boolean viewPairs = false;
         private boolean pairedArcView = false;
         public boolean flagZeroQualityAlignments = true;
@@ -1107,6 +1109,7 @@ public class AlignmentTrack extends AbstractTrack implements AlignmentTrackEvent
             groupByOption = null;
             flagZeroQualityAlignments = prefs.getAsBoolean(PreferenceManager.SAM_FLAG_ZERO_QUALITY);
             bisulfiteContext = DEFAULT_BISULFITE_CONTEXT;
+            samAlleleThreshold = prefs.getAsFloat(PreferenceManager.SAM_ALLELE_THRESHOLD);
 
 
             colorByTag = prefs.get(PreferenceManager.SAM_COLOR_BY_TAG);
