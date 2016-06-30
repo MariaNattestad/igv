@@ -30,6 +30,7 @@ import org.broad.igv.PreferenceManager;
 import org.broad.igv.feature.Strand;
 import org.broad.igv.feature.genome.Genome;
 import org.broad.igv.feature.genome.GenomeManager;
+import org.broad.igv.feature.Range;
 import org.broad.igv.renderer.ContinuousColorScale;
 import org.broad.igv.renderer.GraphicUtils;
 import org.broad.igv.sam.AlignmentTrack.ColorOption;
@@ -55,12 +56,25 @@ import java.util.List;
  */
 public class AlignmentRenderer implements FeatureRenderer {
 
+    /* Reference genome sequence with coordinates. */
+    private class GenomeSeq {
+        public String chrom;
+        public int chromStart;
+        public int chromEnd;
+        public byte[] seq;
+
+        public GenomeSeq(Range range) {
+            Genome genome = GenomeManager.getInstance().getCurrentGenome();
+            this.chrom = range.getChr();
+            this.chromStart = range.getStart();
+            this.chromEnd = range.getEnd();
+            this.seq = GenomeManager.getInstance().getCurrentGenome().getSequence(chrom, chromStart, chromEnd);
+        }
+    }
+
     private static Logger log = Logger.getLogger(AlignmentRenderer.class);
 
     public static final Color GROUP_DIVIDER_COLOR = new Color(200, 200, 200);
-
-    // A "dummy" reference for soft-clipped reads.
-    private static byte[] softClippedReference = new byte[1000];
 
     private static Color smallISizeColor = new Color(0, 0, 150);
     private static Color largeISizeColor = new Color(150, 0, 0);
@@ -278,13 +292,15 @@ public class AlignmentRenderer implements FeatureRenderer {
                                  Rectangle trackRect, RenderOptions renderOptions,
                                  boolean leaveMargin,
                                  Map<String, Color> selectedReadNames) {
-
         double origin = context.getOrigin();
         double locScale = context.getScale();
         Font font = FontManager.getFont(10);
         boolean completeReadsOnly = PreferenceManager.getInstance().getAsBoolean(PreferenceManager.SAM_COMPLETE_READS_ONLY);
 
         if ((alignments != null) && (alignments.size() > 0)) {
+            // Retrieve the reference sequence for the current window
+            // to avoid re-querying it for each alignment and/or block.
+            GenomeSeq genomeSeq = new GenomeSeq(context.getReferenceFrame().getCurrentRange());
 
             int lastPixelDrawn = -1;
 
@@ -329,12 +345,12 @@ public class AlignmentRenderer implements FeatureRenderer {
                     g.fillRect((int) pixelStart, y, w, h);
                     lastPixelDrawn = (int) pixelStart + w;
                 } else if (alignment instanceof PairedAlignment) {
-                    drawPairedAlignment((PairedAlignment) alignment, rowRect, trackRect, context, renderOptions, leaveMargin, selectedReadNames, font);
+                    drawPairedAlignment((PairedAlignment) alignment, genomeSeq, rowRect, trackRect, context, renderOptions, leaveMargin, selectedReadNames, font);
                 } else {
                     Color alignmentColor = getAlignmentColor(alignment, renderOptions);
                     Graphics2D g = context.getGraphic2DForColor(alignmentColor);
                     g.setFont(font);
-                    drawAlignment(alignment, rowRect, trackRect, g, context, alignmentColor, renderOptions, leaveMargin, selectedReadNames);
+                    drawAlignment(alignment, genomeSeq, rowRect, trackRect, g, context, alignmentColor, renderOptions, leaveMargin, selectedReadNames);
                 }
             }
 
@@ -419,6 +435,7 @@ public class AlignmentRenderer implements FeatureRenderer {
      * Draw a pair of alignments as a single "template".
      *
      * @param pair
+     * @param refGenomeSeq
      * @param rowRect
      * @param context
      * @param renderOptions
@@ -428,6 +445,7 @@ public class AlignmentRenderer implements FeatureRenderer {
      */
     private void drawPairedAlignment(
             PairedAlignment pair,
+            GenomeSeq refGenomeSeq,
             Rectangle rowRect,
             Rectangle trackRect,
             RenderContext context,
@@ -455,7 +473,7 @@ public class AlignmentRenderer implements FeatureRenderer {
 
         Graphics2D g = context.getGraphic2DForColor(alignmentColor1);
         g.setFont(font);
-        drawAlignment(pair.firstAlignment, rowRect, trackRect, g, context, alignmentColor1, renderOptions, leaveMargin, selectedReadNames);
+        drawAlignment(pair.firstAlignment, refGenomeSeq, rowRect, trackRect, g, context, alignmentColor1, renderOptions, leaveMargin, selectedReadNames);
 
         //If the paired alignment is in memory, we draw it.
         //However, we get the coordinates from the first alignment
@@ -466,7 +484,7 @@ public class AlignmentRenderer implements FeatureRenderer {
             }
             g = context.getGraphic2DForColor(alignmentColor2);
 
-            drawAlignment(pair.secondAlignment, rowRect, trackRect, g, context, alignmentColor2, renderOptions, leaveMargin, selectedReadNames);
+            drawAlignment(pair.secondAlignment, refGenomeSeq, rowRect, trackRect, g, context, alignmentColor2, renderOptions, leaveMargin, selectedReadNames);
         } else {
             return;
         }
@@ -520,6 +538,7 @@ public class AlignmentRenderer implements FeatureRenderer {
      * Draw a (possibly gapped) alignment
      *
      * @param alignment
+     * @param refGenomeSeq
      * @param rowRect
      * @param trackRect
      * @param g
@@ -531,6 +550,7 @@ public class AlignmentRenderer implements FeatureRenderer {
      */
     private void drawAlignment(
             Alignment alignment,
+            GenomeSeq refGenomeSeq,
             Rectangle rowRect,
             Rectangle trackRect,
             Graphics2D g,
@@ -571,6 +591,13 @@ public class AlignmentRenderer implements FeatureRenderer {
         if (dX >= 8) {
             Font f = FontManager.getFont(Font.BOLD, Math.min(dX, 12));
             bpGraphics.setFont(f);
+        }
+
+        // Get a graphics context for drawing gap lines.
+        Graphics2D gapGraphics = (Graphics2D) context.getGraphics().create();
+        Stroke gapGraphicsDefaultStroke = gapGraphics.getStroke();
+        if (PreferenceManager.getInstance().getAsBoolean(PreferenceManager.ENABLE_ANTIALISING)) {
+            gapGraphics.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
         }
 
         boolean isZeroQuality = alignment.getMappingQuality() == 0 && renderOptions.flagZeroQualityAlignments;
@@ -675,7 +702,7 @@ public class AlignmentRenderer implements FeatureRenderer {
             if ((locScale < 5) || (AlignmentTrack.isBisulfiteColorType(renderOptions.getColorOption()) && (locScale < 100))) // Is 100 here going to kill some machines? bpb
             {
                 if (renderOptions.showMismatches || renderOptions.showAllBases) {
-                    drawBases(context, bpGraphics, rowRect, alignment, aBlock, alignmentColor, renderOptions);
+                    drawBases(context, bpGraphics, rowRect, alignment, refGenomeSeq, aBlock, alignmentColor, renderOptions);
                 }
             }
 
@@ -747,11 +774,8 @@ public class AlignmentRenderer implements FeatureRenderer {
                 if (gapStart + gapWidth >= rowRect.x && gapStart <= rowRect.getMaxX()) {
 
                     // Draw connecting lines between blocks, if in view
-                    Graphics2D gLine;
-                    Stroke stroke = null;
-                    Stroke gapStroke = null;
+                    Stroke gapStroke = gapGraphicsDefaultStroke;
                     Color gapLineColor = deletionColor;
-
 
                     int type = gap.getType();
 
@@ -768,19 +792,12 @@ public class AlignmentRenderer implements FeatureRenderer {
                             break;
                     }
 
-
-                    gLine = context.getGraphic2DForColor(gapLineColor);
-                    if (gapStroke != null) {
-                        stroke = gLine.getStroke();
-                        gLine.setStroke(thickStroke);
-                    }
+                    gapGraphics.setColor(gapLineColor);
+                    gapGraphics.setStroke(gapStroke);
 
                     int startX = Math.max(rowRect.x, gapStart);
                     int endX = Math.min(rowRect.x + rowRect.width, gapStart + gapWidth);
-                    gLine.drawLine(startX, y + h / 2, endX, y + h / 2);
-                    if (stroke != null) {
-                        gLine.setStroke(stroke);
-                    }
+                    gapGraphics.drawLine(startX, y + h / 2, endX, y + h / 2);
                 }
 
                 // Next block cannot start before lastBlockEnd.  If its out of view we are done.
@@ -819,6 +836,7 @@ public class AlignmentRenderer implements FeatureRenderer {
      * @param context
      * @param g
      * @param rect
+     * @param refGenomeSeq
      * @param baseAlignment
      * @param block
      * @param alignmentColor
@@ -828,21 +846,14 @@ public class AlignmentRenderer implements FeatureRenderer {
                            Graphics2D g,
                            Rectangle rect,
                            Alignment baseAlignment,
+                           GenomeSeq refGenomeSeq,
                            AlignmentBlock block,
                            Color alignmentColor,
                            RenderOptions renderOptions) {
 
         boolean isSoftClipped = block.isSoftClipped();
-
-
-        // Get the base qualities, start/end,  and reference sequence
-        String chr = context.getChr();
-        final int start = block.getStart();
-        final int end = block.getEnd();
-        Genome genome = GenomeManager.getInstance().getCurrentGenome();
-
-        final byte[] reference = isSoftClipped ? softClippedReference : genome.getSequence(chr, start, end);
-
+        final int start = (int) Math.max(block.getStart(), refGenomeSeq.chromStart);
+        final int end = (int) Math.min(block.getEnd(), refGenomeSeq.chromEnd);
         boolean haveBases = (block.hasBases() && block.getLength() > 0);
 
         ShadeBasesOption shadeBasesOption = renderOptions.shadeBasesOption;
@@ -852,7 +863,7 @@ public class AlignmentRenderer implements FeatureRenderer {
         boolean showAllBases = renderOptions.showAllBases &&
                 !(colorOption == ColorOption.BISULFITE || colorOption == ColorOption.NOMESEQ);
 
-        if (!showAllBases && (!haveBases || reference == null)) {
+        if (!showAllBases && (!haveBases || refGenomeSeq.seq == null)) {
             return;
         }
 
@@ -860,7 +871,7 @@ public class AlignmentRenderer implements FeatureRenderer {
         if (haveBases) {
             read = block.getBases();
         } else {
-            read = reference;
+            read = Arrays.copyOfRange(refGenomeSeq.seq, start - refGenomeSeq.chromStart, end - refGenomeSeq.chromStart);
         }
 
 
@@ -876,23 +887,26 @@ public class AlignmentRenderer implements FeatureRenderer {
         boolean nomeseqMode = (renderOptions.getColorOption().equals(AlignmentTrack.ColorOption.NOMESEQ));
         boolean bisulfiteMode = AlignmentTrack.isBisulfiteColorType(renderOptions.getColorOption());
         if (nomeseqMode) {
+            byte[] reference = Arrays.copyOfRange(refGenomeSeq.seq, start - refGenomeSeq.chromStart, end - refGenomeSeq.chromStart);
             bisinfo = new BisulfiteBaseInfoNOMeseq(reference, baseAlignment, block, renderOptions.bisulfiteContext);
         } else if (bisulfiteMode) {
+            byte[] reference = Arrays.copyOfRange(refGenomeSeq.seq, start - refGenomeSeq.chromStart, end - refGenomeSeq.chromStart);
             bisinfo = new BisulfiteBaseInfo(reference, baseAlignment, block, renderOptions.bisulfiteContext);
         }
 
 
         for (int loc = start; loc < end; loc++) {
-            int idx = loc - start;
+            int readidx = loc - block.getStart(),
+                refidx = loc - refGenomeSeq.chromStart;
 
-            boolean misMatch = haveBases && AlignmentUtils.isMisMatch(reference, read, isSoftClipped, idx);
+            boolean misMatch = haveBases && AlignmentUtils.isMisMatch(refGenomeSeq.seq, read, isSoftClipped, refidx, readidx);
 
             if (showAllBases || (!bisulfiteMode && misMatch) ||
-                    (bisulfiteMode && (!DisplayStatus.NOTHING.equals(bisinfo.getDisplayStatus(idx))))) {
-                char c = (char) read[idx];
+                    (bisulfiteMode && (!DisplayStatus.NOTHING.equals(bisinfo.getDisplayStatus(readidx))))) {
+                char c = (char) read[readidx];
 
                 Color color = nucleotideColors.get(c);
-                if (bisulfiteMode) color = bisinfo.getDisplayColor(idx);
+                if (bisulfiteMode) color = bisinfo.getDisplayColor(readidx);
                 if (color == null) {
                     color = Color.black;
                 }
@@ -902,11 +916,12 @@ public class AlignmentRenderer implements FeatureRenderer {
                     color = getShadedColor(qual, color, alignmentColor, prefs);
                 } else if (ShadeBasesOption.FLOW_SIGNAL_DEVIATION_READ == shadeBasesOption || ShadeBasesOption.FLOW_SIGNAL_DEVIATION_REFERENCE == shadeBasesOption) {
                     if (block.hasFlowSignals()) {
-                        color = getFlowSignalColor(reference, misMatch, genome, block, chr, start, loc, idx, shadeBasesOption, alignmentColor, color);
+                        byte[] reference = Arrays.copyOfRange(refGenomeSeq.seq, start - refGenomeSeq.chromStart, end - refGenomeSeq.chromStart);
+                        color = getFlowSignalColor(reference, misMatch, block, refGenomeSeq.chrom, start, loc, readidx, shadeBasesOption, alignmentColor, color);
                     }
                 }
 
-                double bisulfiteXaxisShift = (bisulfiteMode) ? bisinfo.getXaxisShift(idx) : 0;
+                double bisulfiteXaxisShift = (bisulfiteMode) ? bisinfo.getXaxisShift(readidx) : 0;
 
                 // If there is room for text draw the character, otherwise
                 // just draw a rectangle to represent the
@@ -919,7 +934,7 @@ public class AlignmentRenderer implements FeatureRenderer {
                     continue;
                 }
 
-                BisulfiteBaseInfo.DisplayStatus bisstatus = (bisinfo == null) ? null : bisinfo.getDisplayStatus(idx);
+                BisulfiteBaseInfo.DisplayStatus bisstatus = (bisinfo == null) ? null : bisinfo.getDisplayStatus(readidx);
                 drawBase(g, color, c, pX, pY, dX, dY, bisulfiteMode, bisstatus);
             }
         }
@@ -933,7 +948,6 @@ public class AlignmentRenderer implements FeatureRenderer {
      *
      * @param reference
      * @param misMatch
-     * @param genome
      * @param block
      * @param chr
      * @param start
@@ -944,7 +958,7 @@ public class AlignmentRenderer implements FeatureRenderer {
      * @param color
      * @return
      */
-    private Color getFlowSignalColor(byte[] reference, boolean misMatch, Genome genome,
+    private Color getFlowSignalColor(byte[] reference, boolean misMatch,
                                      AlignmentBlock block, String chr, int start, int loc, int idx,
                                      ShadeBasesOption shadeBasesOption,
                                      Color alignmentColor, Color color) {
@@ -957,6 +971,7 @@ public class AlignmentRenderer implements FeatureRenderer {
             // an overcall/undercall situation.  Proper estimation of the reads observed versus expected homopolymer
             // length should use flow signal alignment (SamToFlowspace): https://github.com/iontorrent/Ion-Variant-Hunter
             if (!misMatch) {
+                Genome genome = GenomeManager.getInstance().getCurrentGenome();
                 byte refbase = reference[idx];
                 int pos; // zero based
                 expectedFlowSignal = 100;
