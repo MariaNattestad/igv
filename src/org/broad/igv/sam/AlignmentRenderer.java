@@ -586,7 +586,7 @@ public class AlignmentRenderer implements FeatureRenderer {
 
         // Scale and position of the alignment rendering.
         double locScale = context.getScale();
-        boolean highZoom = (locScale < 0.2);
+        boolean highZoom = (locScale < 0.12);
         int h = (int) Math.max(1, rowRect.getHeight() - (leaveMargin ? 2 : 0));
         int y = (int) (rowRect.getY());
 
@@ -707,15 +707,17 @@ public class AlignmentRenderer implements FeatureRenderer {
                 blockPxStart, blockPxWidth, y, h, largeEnoughForArrow, arrowPxWidth);
         }
 
+        // In "consensus" mode, only show "large" insertions and mismatches at positions with a consistent alternative basepair.
+        // Show all events at high zoom.
+        boolean consensus = prefs.getAsBoolean(PreferenceManager.SAM_CONSENSUS_MODE) &&
+            !highZoom && !AlignmentTrack.isBisulfiteColorType(renderOptions.getColorOption());
+
         // Draw insertions.
-        drawInsertions(contextChromStart, rowRect, locScale, alignment, context, renderOptions);
+        drawInsertions(contextChromStart, rowRect, locScale, alignment, consensus, context, renderOptions);
 
         // Draw basepairs / mismatches.
         if (locScale < 100 && (renderOptions.showMismatches || renderOptions.showAllBases)) {
-            // In "consensus" mode, only show mismatches at positions with a consistent alternative basepair.
             boolean showCenterLine = prefs.getAsBoolean(PreferenceManager.SAM_SHOW_CENTER_LINE);
-            boolean consensus = prefs.getAsBoolean(PreferenceManager.SAM_CONSENSUS_MODE) &&
-                !highZoom && !AlignmentTrack.isBisulfiteColorType(renderOptions.getColorOption());
 
             for (AlignmentBlock aBlock : alignment.getAlignmentBlocks()) {
                 drawBases(context, rowRect, alignment, aBlock, alignmentCounts, consensus, alignmentColor, renderOptions);
@@ -998,7 +1000,7 @@ public class AlignmentRenderer implements FeatureRenderer {
         return color;
     }
 
-    private void drawInsertions(double origin, Rectangle rect, double locScale, Alignment alignment, RenderContext context, RenderOptions renderOptions) {
+    private void drawInsertions(double origin, Rectangle rect, double locScale, Alignment alignment, boolean consensus, RenderContext context, RenderOptions renderOptions) {
 
         AlignmentBlock[] insertions = alignment.getInsertions();
         if (insertions != null) {
@@ -1024,13 +1026,17 @@ public class AlignmentRenderer implements FeatureRenderer {
                     largeInsGraphics.fillRect(x - 3, y, 6, h);
                     largeInsGraphics.fillRect(x - 5, y + h - 2, 10, 2);
                 } else {
-                    // Only draw "small" insertions when the insertion would consume more than 3px on the screen.
-                    int insertionPxWidth = (int) Math.max(1, insWidth / locScale);
-                    if (insertionPxWidth > 3) {
-                        smallInsGraphics = (smallInsGraphics != null) ? smallInsGraphics : context.getGraphic2DForColor(Color.red);
-                        smallInsGraphics.fillRect(x - 2, y, 4, 2);
-                        smallInsGraphics.fillRect(x - 1, y, 2, h);
-                        smallInsGraphics.fillRect(x - 2, y + h - 2, 4, 2);
+                    // Hide "small" insertions when consensus applies.
+                    // Even when consensus does not apply, only show insertions when the insertion would
+                    // consume more than 3px on the screen.
+                    if (!consensus) {
+                        int insertionPxWidth = (int) Math.max(1, insWidth / locScale);
+                        if (insertionPxWidth > 3) {
+                            smallInsGraphics = (smallInsGraphics != null) ? smallInsGraphics : context.getGraphic2DForColor(Color.red);
+                            smallInsGraphics.fillRect(x - 2, y, 4, 2);
+                            smallInsGraphics.fillRect(x - 1, y, 2, h);
+                            smallInsGraphics.fillRect(x - 2, y + h - 2, 4, 2);
+                        }
                     }
                 }
             }
