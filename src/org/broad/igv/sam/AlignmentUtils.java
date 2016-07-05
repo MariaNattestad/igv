@@ -40,7 +40,7 @@ public class AlignmentUtils {
     public static final byte C = 'C';
     public static final byte G = 'G';
     public static final byte T = 'T';
-    
+
     /**
      * Return true if the two bases can be considered a match.  The comparison is case-insensitive, and
      * considers ambiguity codes in the reference.
@@ -95,7 +95,7 @@ public class AlignmentUtils {
     }
 
     /**
-     * Check whether there is a mismatch between {@code reference[idx]} and {@code read[idx]},
+     * Check whether there is a mismatch between {@code reference[refidx]} and {@code read[readidx]},
      * guarding against {@code reference} being too short.
      * If we do not have a valid reference we assume a match, that is, NOT a misMatch.
      *
@@ -103,24 +103,23 @@ public class AlignmentUtils {
      * @param reference
      * @param read
      * @param isSoftClipped
-     * @param idx
+     * @param refidx
+     * @param readidx
      * @return
      */
-    static boolean isMisMatch(byte[] reference, byte[] read, boolean isSoftClipped, int idx){
+    static boolean isMisMatch(byte[] reference, byte[] read, boolean isSoftClipped, int refidx, int readidx){
         if(reference == null) return false;
         boolean misMatch = false;
         if (isSoftClipped) {
             // Goby will return '=' characters when the soft-clip happens to match the reference.
             // It could actually be useful to see which part of the soft clipped bases match, to help detect
             // cases when an aligner clipped too much.
-            final byte readbase = read[idx];
+            final byte readbase = read[readidx];
             misMatch = readbase != '=';  // mismatch, except when the soft-clip has an '=' base.
         } else {
-            final int referenceLength = reference.length;
-            final byte refbase = idx < referenceLength ? reference[idx] : 0;
-            final byte readbase = read[idx];
+            final byte refbase = refidx < reference.length ? reference[refidx] : 0;
+            final byte readbase = read[readidx];
             misMatch = readbase != '=' &&
-                    idx < referenceLength &&
                     refbase != 0 &&
                     !AlignmentUtils.compareBases(refbase, readbase);
         }
