@@ -26,6 +26,7 @@
 package org.broad.igv.sam;
 
 import org.apache.log4j.Logger;
+import org.broad.igv.Globals;
 import org.broad.igv.PreferenceManager;
 import org.broad.igv.feature.Strand;
 import org.broad.igv.feature.genome.Genome;
@@ -48,6 +49,7 @@ import org.broad.igv.util.ChromosomeColors;
 import java.awt.*;
 import java.awt.geom.GeneralPath;
 import java.awt.geom.QuadCurve2D;
+import java.awt.geom.Rectangle2D;
 import java.util.*;
 import java.util.List;
 
@@ -68,6 +70,19 @@ public class AlignmentRenderer implements FeatureRenderer {
             this.chromStart = range.getStart();
             this.chromEnd = range.getEnd();
             this.seq = genome.getSequence(this.chrom, this.chromStart, this.chromEnd);
+        }
+    };
+
+    /* Gap label details */
+    private class GapLabel {
+        public int chromWidth;
+        public int pxWidth;
+        public int pxCenter;
+
+        public GapLabel(int chromWidth, int pxWidth, int pxCenter) {
+            this.chromWidth = chromWidth;
+            this.pxWidth = pxWidth;
+            this.pxCenter = pxCenter;
         }
     };
 
@@ -636,13 +651,20 @@ public class AlignmentRenderer implements FeatureRenderer {
         // Get a graphics context for drawing basepairs (allocate once per alignment; resue for each block).
         Graphics2D bpGraphics = (Graphics2D) context.getGraphics().create();
         int dX = (int) Math.max(1, (1.0 / locScale));
-        if (PreferenceManager.getInstance().getAsBoolean(PreferenceManager.ENABLE_ANTIALISING)) {
+        if (prefs.getAsBoolean(PreferenceManager.ENABLE_ANTIALISING)) {
             bpGraphics.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
         }
         if (dX >= 8) {
             Font f = FontManager.getFont(Font.BOLD, Math.min(dX, 12));
             bpGraphics.setFont(f);
         }
+
+        // Get a graphics context for labeling deletion size.
+        Graphics2D deletionLabelGraphics = (Graphics2D) context.getGraphics().create();
+        if (prefs.getAsBoolean(PreferenceManager.ENABLE_ANTIALISING)) {
+            deletionLabelGraphics.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+        }
+        deletionLabelGraphics.setFont(FontManager.getFont(Font.BOLD, h - 2));
 
         // Get a graphics context for indicating the end of a read.
         Graphics2D terminalGraphics = context.getGraphic2DForColor(Color.DARK_GRAY);
@@ -663,6 +685,7 @@ public class AlignmentRenderer implements FeatureRenderer {
         // Draw alignment blocks separated by gaps.  Define the blocks by walking through the gap list,
         // which simplifies smoothing small gaps at low resolution.
         java.util.List<Gap> gaps = alignment.getGaps();
+        java.util.ArrayList<GapLabel> gapLabels = new java.util.ArrayList<GapLabel>();
         if (gaps != null) {
             for (Gap gap : gaps) {
                 int gapChromStart = (int) gap.getStart(),
@@ -679,8 +702,8 @@ public class AlignmentRenderer implements FeatureRenderer {
                     break; // done examining gaps
                 }
 
-                // Draw the gap if it is sufficiently large at the current zoom.
-                boolean drawGap = (gapPxWidth >= 3);
+                // Draw the gap if it is sufficiently large at the current zoom or if it qualifies as a "large" variant.
+                boolean drawGap = (gapPxWidth >= 3) || (gapChromWidth > renderOptions.getLargeInsertionsThreshold());
                 if (drawGap) {
                     // Draw the preceding alignment block.
                     int blockPxStart = (int) ((blockChromStart - contextChromStart) / locScale),
@@ -721,6 +744,9 @@ public class AlignmentRenderer implements FeatureRenderer {
                         if (stroke != null) {
                             gLine.setStroke(stroke);
                         }
+
+                        // Record details for the deletion label; draw the label after the blocks so that it stacks on top.
+                        gapLabels.add(new GapLabel(gapChromWidth, gapPxWidth, gapPxStart + (int) Math.ceil(gapPxWidth / 2)));
                     }
                     // Start the next alignment block after the gap.
                     blockChromStart = gapChromEnd;
@@ -738,6 +764,16 @@ public class AlignmentRenderer implements FeatureRenderer {
             drawAlignmentBlock(g, outlineGraphics, terminalGraphics,
                 alignment.isNegativeStrand(), alignmentChromStart, alignmentChromEnd, blockChromStart, blockChromEnd,
                 blockPxStart, blockPxWidth, y, h, largeEnoughForArrow, arrowPxWidth);
+        }
+
+        // Draw labels for gaps.  It is important that this comes after the last block is drawn so that gap
+        // labels stack over the blocks.
+        for (GapLabel gl: gapLabels) {
+            if (gl.chromWidth > 1) {
+                int maxPxWidth; // maximum width to use for gap label
+                maxPxWidth = (gl.chromWidth > renderOptions.getLargeInsertionsThreshold()) ? Integer.MAX_VALUE : gl.pxWidth;
+                drawLargeIndelLabel(deletionLabelGraphics, Globals.DECIMAL_FORMAT.format(gl.chromWidth), false, gl.pxCenter, y, h - 1, maxPxWidth);
+            }
         }
 
         // In "consensus" mode, only show "large" insertions and mismatches at positions with a consistent alternative basepair.
@@ -1029,6 +1065,56 @@ public class AlignmentRenderer implements FeatureRenderer {
         return color;
     }
 
+    /**
+     * Draw a label to indicate the size of an insertion or deletion provided that the label fits in the available space.
+     * Return whether the label is drawn.
+     *
+     *
+     * @param g             graphics context on which to draw
+     * @param labelText     text to display in the label
+     * @param insertion     true if insertion, false if deletion
+     * @param pxCenter      X-coordinate at which to center the label
+     * @param pxTop         Y-coordinate for the top of the label
+     * @param pxH           height of the label
+     * @param pxHmax        maximum permitted width
+    */
+    private boolean drawLargeIndelLabel(Graphics2D g, String labelText, boolean insertion, int pxCenter, int pxTop, int pxH, int pxWmax) {
+        // Padding in the rectangle.
+        int pxPad = 3;
+        // Width of a trapezoid "wing"
+        int pxWing = 3;
+
+        // Calculate the width required to draw the label, including trapezoid wings.
+        Rectangle2D textBounds = g.getFontMetrics().getStringBounds(labelText, g);
+        int pxW = (int) textBounds.getWidth() + 2*pxWing + 2*pxPad;
+
+        // If the label is too wide, do not draw and return `false`.
+        if (pxW > pxWmax) {
+            return false;
+        }
+
+        // Calculate the pixel left and right coordinates of the label, including the wings.
+        int pxLeft = pxCenter - (int) (pxW / 2),
+            pxRight = pxLeft + pxW;
+
+        // Draw and fill a trapezoid shape.  Point the trapezoid down for a deletion and up for an insertion.
+        int[] xPoly = { pxLeft + (insertion ? 0 : pxWing+pxPad), pxLeft + (insertion ? pxWing+pxPad : 0),
+                        pxRight - (insertion ? pxWing+pxPad : 0), pxRight - (insertion ? 0 : pxWing+pxPad) },
+              yPoly = { pxTop + pxH, pxTop, pxTop, pxTop + pxH };
+        Shape trapezoidShape = new Polygon(xPoly, yPoly, xPoly.length);
+        g.setColor(insertion ? purple : Color.white);
+        g.fill(trapezoidShape);
+        // Outline the trapezoid shape.
+        g.setColor(purple);
+        g.draw(trapezoidShape);
+
+        // Draw the label text.
+        g.setColor(insertion ? Color.white : purple);
+        g.drawString(labelText, pxLeft + pxWing + pxPad + 1, pxTop + pxH - 1);
+
+        return true;
+    }
+
     private void drawInsertions(double origin, Rectangle rect, double locScale, Alignment alignment, boolean consensus, RenderContext context, RenderOptions renderOptions) {
 
         AlignmentBlock[] insertions = alignment.getInsertions();
@@ -1050,10 +1136,14 @@ public class AlignmentRenderer implements FeatureRenderer {
                 int insWidth = aBlock.getBases().length;
                 if (renderOptions.isFlagLargeInsertions() &&
                         insWidth > renderOptions.getLargeInsertionsThreshold()) {
-                    largeInsGraphics = (largeInsGraphics != null) ? largeInsGraphics : context.getGraphic2DForColor(purple);
-                    largeInsGraphics.fillRect(x - 5, y, 10, 2);
-                    largeInsGraphics.fillRect(x - 3, y, 6, h);
-                    largeInsGraphics.fillRect(x - 5, y + h - 2, 10, 2);
+                    if (largeInsGraphics == null) {
+                        largeInsGraphics = (Graphics2D) context.getGraphics().create();
+                        if (prefs.getAsBoolean(PreferenceManager.ENABLE_ANTIALISING)) {
+                            largeInsGraphics.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+                        }
+                        largeInsGraphics.setFont(FontManager.getFont(Font.BOLD, h - 2));
+                    }
+                    drawLargeIndelLabel(largeInsGraphics, Globals.DECIMAL_FORMAT.format(aBlock.getBases().length), true, x, y - 1, h - 1, Integer.MAX_VALUE);
                 } else {
                     // Hide "small" insertions when consensus applies.
                     // Even when consensus does not apply, only show insertions when the insertion would
