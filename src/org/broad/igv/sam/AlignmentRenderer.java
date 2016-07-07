@@ -771,7 +771,7 @@ public class AlignmentRenderer implements FeatureRenderer {
         for (GapLabel gl: gapLabels) {
             if (gl.chromWidth > 1) {
                 int maxPxWidth; // maximum width to use for gap label
-                maxPxWidth = (gl.chromWidth > renderOptions.getLargeInsertionsThreshold()) ? Integer.MAX_VALUE : gl.pxWidth;
+                maxPxWidth = (renderOptions.isFlagLargeInsertions() && (gl.chromWidth > renderOptions.getLargeInsertionsThreshold())) ? Integer.MAX_VALUE : gl.pxWidth;
                 drawLargeIndelLabel(deletionLabelGraphics, Globals.DECIMAL_FORMAT.format(gl.chromWidth), false, gl.pxCenter, y, h - 1, maxPxWidth);
             }
         }
