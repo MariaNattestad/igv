@@ -253,7 +253,13 @@ public class FeatureTrack extends AbstractTrack implements IGVEventObserver {
                 //don't want to layout for each one
                 IGV.getInstance().layoutMainPanel();
             }
-            event.getReferenceFrame().getEventBus().post( ViewChange.Result());
+            // AMW: This event handler is called many times in a short window
+            // when multiple tracks are loaded and the reference frame is of
+            // reasonable size.  Repeated posting of the ViewChange message causes
+            // serious performance problems.  This should really be debounced, but
+            // its simpler to just remove it.
+            // TODO: Debounce with 100ms or 250ms window size.
+            //event.getReferenceFrame().getEventBus().post( ViewChange.Result());
         } else {
             log.info("Unknown event type: " + e.getClass());
         }
