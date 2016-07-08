@@ -827,7 +827,7 @@ public class FeatureTrack extends AbstractTrack implements IGVEventObserver {
             renderFeatureImpl(context, inputRect, packedFeatures);
         } catch (TribbleException e) {
             log.error("Tribble error", e);
-            //Error loading features.  We'll let the user decide if this is "fatal" or not.  
+            //Error loading features.  We'll let the user decide if this is "fatal" or not.
             if (!fatalLoadError) {
                 fatalLoadError = true;
                 boolean unload = MessageUtils.confirm("<html> Error loading features: " + e.getMessage() +
@@ -950,7 +950,7 @@ public class FeatureTrack extends AbstractTrack implements IGVEventObserver {
                     PackedFeatures pf = new PackedFeatures(chr, start, end);
                     packedFeaturesMap.put(referenceFrame.getName(), pf);
                     String msg = "Error loading features for interval: " + chr + ":" + start + "-" + end + " <br>" + e.toString();
-                    MessageUtils.showMessage(msg);
+                    //MessageUtils.showMessage(msg);
                     log.error(msg, e);
                 } finally {
                     featuresLoading = false;

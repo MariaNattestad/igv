@@ -1027,7 +1027,9 @@ public class AlignmentTrack extends AbstractTrack implements AlignmentTrackEvent
     public void dispose() {
         super.dispose();
         clearCaches();
-        dataManager.dumpAlignments();
+        if (dataManager != null) {
+            dataManager.dumpAlignments();
+        }
         dataManager = null;
         removed = true;
         setVisible(false);
