@@ -32,18 +32,17 @@ import org.broad.igv.feature.Strand;
 import org.broad.igv.feature.genome.Genome;
 import org.broad.igv.feature.genome.GenomeManager;
 import org.broad.igv.feature.Range;
+import org.broad.igv.renderer.ColorScale;
 import org.broad.igv.renderer.ContinuousColorScale;
 import org.broad.igv.renderer.GraphicUtils;
+import org.broad.igv.renderer.MonocolorScale;
 import org.broad.igv.sam.AlignmentTrack.ColorOption;
 import org.broad.igv.sam.AlignmentTrack.RenderOptions;
 import org.broad.igv.sam.AlignmentTrack.ShadeBasesOption;
 import org.broad.igv.sam.BisulfiteBaseInfo.DisplayStatus;
 import org.broad.igv.track.RenderContext;
 import org.broad.igv.ui.FontManager;
-import org.broad.igv.ui.color.ColorPalette;
-import org.broad.igv.ui.color.ColorTable;
-import org.broad.igv.ui.color.ColorUtilities;
-import org.broad.igv.ui.color.PaletteColorTable;
+import org.broad.igv.ui.color.*;
 import org.broad.igv.util.ChromosomeColors;
 
 import java.awt.*;
@@ -86,6 +85,15 @@ public class AlignmentRenderer implements FeatureRenderer {
         }
     };
 
+
+    public static final HSLColorTable tenXColorTable1 = new HSLColorTable(30);
+    public static final HSLColorTable tenXColorTable2 = new HSLColorTable(270);
+    public static final GreyscaleColorTable tenXColorTable3 = new GreyscaleColorTable();
+
+    public static final MonocolorScale RED_SCALE = new MonocolorScale(0, 100000, Color.RED);
+    public static final MonocolorScale BLUE_SCALE = new MonocolorScale(0, 100000, Color.blue);
+    public static final MonocolorScale GRAY_SCALE = new MonocolorScale(0, 100000, Color.GRAY);
+
     private static Logger log = Logger.getLogger(AlignmentRenderer.class);
 
     public static final Color GROUP_DIVIDER_COLOR = new Color(200, 200, 200);
@@ -113,7 +121,8 @@ public class AlignmentRenderer implements FeatureRenderer {
 
     private ColorTable readGroupColors;
     private ColorTable sampleColors;
-    private ColorTable tagValueColors;
+    private Map<String, ColorTable> tagValueColors;
+    private ColorTable defaultTagColors;
 
     private final Color LR_COLOR = grey1; // "Normal" alignment color
     //private final Color LR_COLOR_12 = new Color(190, 190, 210);
@@ -290,14 +299,16 @@ public class AlignmentRenderer implements FeatureRenderer {
         ColorPalette palette = ColorUtilities.getPalette("Pastel 1");  // TODO let user choose
         readGroupColors = new PaletteColorTable(palette);
         sampleColors = new PaletteColorTable(palette);
-        tagValueColors = new PaletteColorTable(palette);
+        defaultTagColors = new PaletteColorTable(palette);
+        tagValueColors = new HashMap();
 
-        typeToColorMap = new HashMap<AlignmentTrack.OrientationType, Color>(5);
+        typeToColorMap = new HashMap<>(5);
         typeToColorMap.put(AlignmentTrack.OrientationType.LL, LL_COLOR);
         typeToColorMap.put(AlignmentTrack.OrientationType.LR, LR_COLOR);
         typeToColorMap.put(AlignmentTrack.OrientationType.RL, RL_COLOR);
         typeToColorMap.put(AlignmentTrack.OrientationType.RR, RR_COLOR);
         typeToColorMap.put(null, grey1);
+
     }
 
     /**
@@ -306,7 +317,8 @@ public class AlignmentRenderer implements FeatureRenderer {
     public void renderAlignments(List<Alignment> alignments,
                                  RenderContext context,
                                  Rectangle rowRect,
-                                 Rectangle trackRect, RenderOptions renderOptions,
+                                 Rectangle trackRect,
+                                 RenderOptions renderOptions,
                                  boolean leaveMargin,
                                  Map<String, Color> selectedReadNames,
                                  AlignmentCounts alignmentCounts) {
@@ -365,6 +377,8 @@ public class AlignmentRenderer implements FeatureRenderer {
                     lastPixelDrawn = (int) pixelStart + w;
                 } else if (alignment instanceof PairedAlignment) {
                     drawPairedAlignment((PairedAlignment) alignment, genomeSeq, rowRect, trackRect, context, renderOptions, leaveMargin, selectedReadNames, font, alignmentCounts);
+                } else if (alignment instanceof LinkedAlignment) {
+                    drawExtendedAlignment((LinkedAlignment) alignment, genomeSeq, rowRect, trackRect, context, renderOptions, leaveMargin, selectedReadNames, font, alignmentCounts);
                 } else {
                     Color alignmentColor = getAlignmentColor(alignment, renderOptions);
                     Graphics2D g = context.getGraphic2DForColor(alignmentColor);
@@ -391,6 +405,34 @@ public class AlignmentRenderer implements FeatureRenderer {
         }
     }
 
+    private void drawExtendedAlignment(LinkedAlignment alignment, GenomeSeq genomeSeq, Rectangle rowRect, Rectangle trackRect, RenderContext context, RenderOptions renderOptions, boolean leaveMargin, Map<String, Color> selectedReadNames, Font font, AlignmentCounts alignmentCounts) {
+
+        double origin = context.getOrigin();
+        double locScale = context.getScale();
+
+        Color alignmentColor = getAlignmentColor(alignment, renderOptions);
+
+        List<Alignment> barcodedAlignments = alignment.alignments;
+        if (barcodedAlignments.size() > 0) {
+            Alignment firstAlignment = barcodedAlignments.get(0);
+            Graphics2D g = context.getGraphic2DForColor(alignmentColor);
+            g.setFont(font);
+            if (barcodedAlignments.size() > 1) {
+                Color lineColor = new Color(alignmentColor.getRed() / 255f, alignmentColor.getGreen() / 255f, alignmentColor.getBlue() / 255f, 0.3f);
+                Graphics2D gline = context.getGraphic2DForColor(lineColor);
+                int startX = (int) ((firstAlignment.getEnd() - origin) / locScale);
+                int endX = (int) ((barcodedAlignments.get(barcodedAlignments.size() - 1).getStart() - origin) / locScale);
+                int h = (int) Math.max(1, rowRect.getHeight() - (leaveMargin ? 2 : 0));
+                int y = (int) (rowRect.getY());
+                startX = Math.max(rowRect.x, startX);
+                endX = Math.min(rowRect.x + rowRect.width, endX);
+                gline.drawLine(startX, y + h / 2, endX, y + h / 2);
+            }
+            for (Alignment al : barcodedAlignments) {
+                drawAlignment(al, genomeSeq,rowRect, trackRect, g, context, alignmentColor, renderOptions, leaveMargin, selectedReadNames, alignmentCounts);
+            }
+        }
+    }
 
     /**
      * Method for drawing alignments without "blocks" (e.g. DotAlignedAlignment)
@@ -467,7 +509,7 @@ public class AlignmentRenderer implements FeatureRenderer {
             Rectangle rowRect,
             Rectangle trackRect,
             RenderContext context,
-            AlignmentTrack.RenderOptions renderOptions,
+            RenderOptions renderOptions,
             boolean leaveMargin,
             Map<String, Color> selectedReadNames,
             Font font,
@@ -1162,7 +1204,7 @@ public class AlignmentRenderer implements FeatureRenderer {
         }
     }
 
-    private Color getAlignmentColor(Alignment alignment, AlignmentTrack.RenderOptions renderOptions) {
+    private Color getAlignmentColor(Alignment alignment, RenderOptions renderOptions) {
 
         // Set color used to draw the feature.  Highlight features that intersect the
         // center line.  Also restorePersistentState row "score" if alignment intersects center line
@@ -1261,10 +1303,37 @@ public class AlignmentRenderer implements FeatureRenderer {
                 if (tag != null) {
                     Object tagValue = alignment.getAttribute(tag);
                     if (tagValue != null) {
-                        c = tagValueColors.get(tagValue.toString());
+
+                        ColorTable ctable;
+                        String ctableKey;
+
+                        String groupByTag = renderOptions.getGroupByTag();
+                        if (groupByTag == null) {
+                            ctable = defaultTagColors;
+
+                        } else {
+                            Object g = alignment.getAttribute(groupByTag);
+                            String group = g == null ? "" : g.toString();
+                            ctableKey = groupByTag + ":" + group;
+                            ctable = tagValueColors.get(ctableKey);
+                            if (ctable == null) {
+
+                                if (groupByTag.equals("HP")) {
+                                    ctable = getTenXColorTable(group);
+                                } else {
+                                    ctable = defaultTagColors;
+                                }
+
+                                tagValueColors.put(group, ctable);
+                            }
+                        }
+
+                        c = ctable.get(tagValue.toString());
+
                     }
                 }
                 break;
+
 
             default:
 //                if (renderOptions.shadeCenters && center >= alignment.getStart() && center <= alignment.getEnd()) {
@@ -1284,6 +1353,19 @@ public class AlignmentRenderer implements FeatureRenderer {
         }
 
         return c;
+    }
+
+    private ColorTable getTenXColorTable(String group) {
+        ColorTable ctable;
+        if (group.equals("1")) {
+            ctable = tenXColorTable1;
+
+        } else if (group.equals("2")) {
+            ctable = tenXColorTable2;
+        } else {
+            ctable = tenXColorTable3;
+        }
+        return ctable;
     }
 
     public static PEStats getPEStats(Alignment alignment, RenderOptions renderOptions) {
@@ -1415,25 +1497,6 @@ public class AlignmentRenderer implements FeatureRenderer {
         }
 
         return type;
-    }
-
-    /**
-     * Similar to "pair orientation" color, but this method does not attempt to interpret orientations.
-     *
-     * @param alignment
-     * @return
-     */
-    private Color getTemplateStrandColor(Alignment alignment) {
-
-        Color c = null;
-        if (alignment.isPaired()) {
-
-            final String pairOrientation = alignment.getPairOrientation();
-            return tagValueColors.get(pairOrientation);
-        }
-
-        return c == null ? grey1 : c;
-
     }
 
     public SortedSet<Shape> curveOverlap(double x) {

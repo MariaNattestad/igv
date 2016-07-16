@@ -27,7 +27,10 @@
 
 <Global name="Annotations" version="1">
 
-    <Resource name="Top level"
-              path="https://s3.amazonaws.com/igv.broadinstitute.org/annotations/galGal5/ref_Gallus_gallus-5.0_top_level.sorted.gff3.gz"/>
-
+    <Resource name="miRNA"
+              path="https://s3.amazonaws.com/igv.broadinstitute.org/genomes/seq/Zea_mays_AGPv3.3.1/miRNA.gff3.gz"/>
+    <Resource name="miRNA gene"
+              path="https://s3.amazonaws.com/igv.broadinstitute.org/genomes/seq/Zea_mays_AGPv3.3.1/miRNA_gene.gff3.gz"/>
+    <Resource name="repeat region"
+              path="https://s3.amazonaws.com/igv.broadinstitute.org/genomes/seq/Zea_mays_AGPv3.3.1/repeat_region.gff3.gz"/>
 </Global>

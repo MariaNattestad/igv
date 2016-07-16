@@ -29,8 +29,6 @@
  */
 package org.broad.igv.sam;
 
-import com.google.common.collect.HashBasedTable;
-import com.google.common.collect.Table;
 import org.apache.log4j.Logger;
 import org.broad.igv.feature.Range;
 import org.broad.igv.feature.Strand;
@@ -58,9 +56,7 @@ public class AlignmentPacker {
         }
     };
 
-    private static final String NULL_GROUP_VALUE = "Because google-guava tables don't support a null key, we use a special value" +
-            " for null keys. It doesn't matter much what it is, but we want to avoid collisions. I find it unlikely that " +
-            " this sentence will ever be used as a group value";
+    private static final String NULL_GROUP_VALUE = "";
     public static final int tenMB = 10000000;
 
     /**
@@ -74,18 +70,22 @@ public class AlignmentPacker {
 
         LinkedHashMap<String, List<Row>> packedAlignments = new LinkedHashMap<String, List<Row>>();
 
-        boolean isPairedAlignments = renderOptions.isViewPairs() || renderOptions.isPairedArcView();
 
+        List<Alignment> alList = interval.getAlignments();
+        // TODO -- means to undo this
+        if (renderOptions.isLinkedReads()) {
+            alList = linkByTag(alList, renderOptions.getColorByTag());
+        }
 
         if (renderOptions.groupByOption == null) {
             List<Row> alignmentRows = new ArrayList<Row>(10000);
-            pack(interval.getAlignments(), isPairedAlignments, alignmentRows);
+            pack(alList, renderOptions, alignmentRows);
             packedAlignments.put("", alignmentRows);
         } else {
 
             // Separate alignments into groups.
             Map<String, List<Alignment>> groupedAlignments = new HashMap<String, List<Alignment>>();
-            Iterator<Alignment> iter = interval.getAlignmentIterator();
+            Iterator<Alignment> iter = alList.iterator();
             while (iter.hasNext()) {
                 Alignment alignment = iter.next();
                 String groupKey = getGroupValue(alignment, renderOptions);
@@ -101,24 +101,30 @@ public class AlignmentPacker {
             }
 
 
-            // Now alphabetize (sort) and packGroup the groups
+            // Now alphabetize (sort) and pack the groups
             List<String> keys = new ArrayList<String>(groupedAlignments.keySet());
             Comparator<String> groupComparator = getGroupComparator(renderOptions.groupByOption);
             Collections.sort(keys, groupComparator);
 
             for (String key : keys) {
-                if (key.equals(NULL_GROUP_VALUE)) continue;
                 List<Row> alignmentRows = new ArrayList<Row>(10000);
                 List<Alignment> group = groupedAlignments.get(key);
-                pack(group, isPairedAlignments, alignmentRows);
+                pack(group, renderOptions, alignmentRows);
+
+                if (renderOptions.isLinkedReads()) {
+                    for (Row row : alignmentRows) {
+                        row.updateScore(AlignmentTrack.SortOption.MAX_GAP, 0, interval, "");
+                    }
+                    alignmentRows.sort(new Comparator<Row>() {
+                        @Override
+                        public int compare(Row o1, Row o2) {
+                            return o1.compareTo(o2);
+                        }
+                    });
+                }
+
                 packedAlignments.put(key, alignmentRows);
             }
-
-            //Put null valued group at end
-            List<Row> alignmentRows = new ArrayList<Row>(10000);
-            List<Alignment> group = groupedAlignments.get(NULL_GROUP_VALUE);
-            pack(group, isPairedAlignments, alignmentRows);
-            packedAlignments.put("", alignmentRows);
         }
 
         List<AlignmentInterval> tmp = new ArrayList<AlignmentInterval>();
@@ -127,12 +133,18 @@ public class AlignmentPacker {
     }
 
 
-    private void pack(List<Alignment> alList, boolean pairAlignments, List<Row> alignmentRows) {
+    private void pack(List<Alignment> alList, AlignmentTrack.RenderOptions renderOptions, List<Row> alignmentRows) {
 
         Map<String, PairedAlignment> pairs = null;
-        if (pairAlignments) {
+
+        boolean isPairedAlignments = renderOptions.isViewPairs() || renderOptions.isPairedArcView();
+        String colorByTag = renderOptions.getColorByTag();
+        boolean isLinkedReads = renderOptions.isLinkedReads() && colorByTag != null;
+
+        if (isPairedAlignments) {
             pairs = new HashMap<String, PairedAlignment>(1000);
         }
+
 
         // Allocate alignemnts to buckets for each range.
         // We use priority queues to keep the buckets sorted by alignment length.  However this  is probably a needless
@@ -156,13 +168,12 @@ public class AlignmentPacker {
             bucketCollection = new SparseBucketCollection(curRange);
         }
 
-
         int curRangeStart = curRange.getStart();
         for (Alignment al : alList) {
 
             if (al.isMapped()) {
                 Alignment alignment = al;
-                if (pairAlignments && al.isPaired() && al.getMate().isMapped() && al.getMate().getChr().equals(al.getChr())) {
+                if (isPairedAlignments && al.isPaired() && al.getMate().isMapped() && al.getMate().getChr().equals(al.getChr())) {
                     String readName = al.getReadName();
                     PairedAlignment pair = pairs.get(readName);
                     if (pair == null) {
@@ -177,7 +188,6 @@ public class AlignmentPacker {
 
                     }
                 }
-
                 // Negative "bucketNumbers" can arise with soft clips at the left edge of the chromosome. Allocate
                 // these alignments to the first bucket.
                 int bucketNumber = Math.max(0, al.getStart() - curRangeStart);
@@ -255,6 +265,29 @@ public class AlignmentPacker {
 
     }
 
+    private List<Alignment> linkByTag(List<Alignment> alList, String tag) {
+
+        List<Alignment> bcList = new ArrayList<>(alList.size() / 10);
+        Map<String, LinkedAlignment> map = new HashMap<>(bcList.size() * 2);
+
+        for (Alignment a : alList) {
+            Object attr = a.getAttribute(tag);
+            if (attr == null) {
+                bcList.add(a);
+            } else {
+                String bc = a.getAttribute(tag).toString();
+                LinkedAlignment linkedAlignment = map.get(bc);
+                if (linkedAlignment == null) {
+                    linkedAlignment = new LinkedAlignment(tag, bc);
+                    map.put(bc, linkedAlignment);
+                    bcList.add(linkedAlignment);
+                }
+                linkedAlignment.addAlignment(a);
+            }
+        }
+        return bcList;
+    }
+
 
     /**
      * Gets the range over which alignmentsList spans. Asssumes all on same chr, and sorted
@@ -284,15 +317,25 @@ public class AlignmentPacker {
                 return new Comparator<String>() {
                     @Override
                     public int compare(String o1, String o2) {
-                        if (o1 != null) {
-                            return o1.compareToIgnoreCase(o2);
-                        } else if (o2 != null) {
-                            return o2.compareToIgnoreCase(o1);
-                        } else {
-                            //Both null;
+                        if (o1 == null && o2 == null) {
                             return 0;
+                        } else if (o1 == null) {
+                            return 1;
+                        } else if (o2 == null) {
+                            return -1;
+                        } else {
+                            // no nulls
+                            if (o1.equals(o2)) {
+                                return 0;
+                            } else if (NULL_GROUP_VALUE.equals(o1)) {
+                                return 1;
+                            }
+                            if (NULL_GROUP_VALUE.equals(o2)) {
+                                return -1;
+                            } else {
+                                return o2.compareToIgnoreCase(o1);
+                            }
                         }
-
                     }
                 };
         }
@@ -342,7 +385,7 @@ public class AlignmentPacker {
         return null;
     }
 
-    static interface BucketCollection {
+    interface BucketCollection {
 
         Range getRange();
 
@@ -407,14 +450,13 @@ public class AlignmentPacker {
             while (bucketNumber < bucketArray.length) {
 
                 if (bucketNumber < 0) {
-                    System.out.println();
+                    log.info("Negative bucket number: " + bucketNumber);
                 }
 
                 bucket = bucketArray[bucketNumber];
                 if (bucket != null) {
                     if (bucket.isEmpty()) {
                         bucketArray[bucketNumber] = null;
-                        bucket = null;
                     } else {
                         return bucket;
                     }

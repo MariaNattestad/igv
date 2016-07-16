@@ -61,6 +61,8 @@ public class AlignmentTileLoader {
     private AlignmentReader reader;
     private boolean cancel = false;
     private boolean pairedEnd = false;
+    private boolean tenX = false;
+    private boolean phased = false;
 
     static void cancelReaders() {
         for (WeakReference<AlignmentTileLoader> readerRef : activeLoaders) {
@@ -181,6 +183,12 @@ public class AlignmentTileLoader {
                     }
                 }
 
+                if(!tenX && record.getAttribute("BX")!= null) {
+                    tenX = true;
+                }
+                if(tenX && !phased && record.getAttribute("HP") != null) {
+                    phased = true;
+                }
 
                 if (!record.isMapped() || (!showDuplicates && record.isDuplicate()) ||
                         (filterFailedReads && record.isVendorFailedRead()) ||
@@ -302,6 +310,17 @@ public class AlignmentTileLoader {
      */
     public boolean isPairedEnd() {
         return pairedEnd;
+    }
+
+    /**
+     * Does this file contain 10X barcoded data?  Assume not until proven otherwise.
+     */
+    public boolean isTenX() {
+        return tenX;
+    }
+
+    public boolean isPhased() {
+        return phased;
     }
 
     public Set<String> getPlatforms() {

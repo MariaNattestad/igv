@@ -88,6 +88,7 @@ import java.util.List;
  */
 @XmlType(factoryMethod = "getNextTrack")
 @XmlSeeAlso(AlignmentTrack.RenderOptions.class)
+
 public class AlignmentTrack extends AbstractTrack implements AlignmentTrackEventListener {
 
     private static Logger log = Logger.getLogger(AlignmentTrack.class);
@@ -99,6 +100,8 @@ public class AlignmentTrack extends AbstractTrack implements AlignmentTrackEvent
 
     private boolean showSpliceJunctions;
     private boolean removed = false;
+    private RenderRollback renderRollback;
+    private boolean showGroupLine;
 
     public enum ShadeBasesOption {
         NONE, QUALITY, FLOW_SIGNAL_DEVIATION_READ, FLOW_SIGNAL_DEVIATION_REFERENCE
@@ -110,11 +113,12 @@ public class AlignmentTrack extends AbstractTrack implements AlignmentTrackEvent
 
     public enum ColorOption {
         INSERT_SIZE, READ_STRAND, FIRST_OF_PAIR_STRAND, PAIR_ORIENTATION, SAMPLE, READ_GROUP, BISULFITE, NOMESEQ,
-        TAG, NONE, UNEXPECTED_PAIR
+        TAG, NONE, UNEXPECTED_PAIR, MAPPED_SIZE
     }
 
     public enum SortOption {
-        START, STRAND, NUCLEOTIDE, QUALITY, SAMPLE, READ_GROUP, INSERT_SIZE, FIRST_OF_PAIR_STRAND, MATE_CHR, TAG, SUPPLEMENTARY, NONE;
+        START, STRAND, NUCLEOTIDE, QUALITY, SAMPLE, READ_GROUP, INSERT_SIZE, FIRST_OF_PAIR_STRAND, MATE_CHR, TAG, SUPPLEMENTARY, NONE,
+        MAX_GAP;
     }
 
     public enum GroupOption {
@@ -210,7 +214,8 @@ public class AlignmentTrack extends AbstractTrack implements AlignmentTrackEvent
 
         renderer = AlignmentRenderer.getInstance();
 
-        this.setDisplayMode(DisplayMode.EXPANDED);
+        showGroupLine = PreferenceManager.getInstance().getAsBoolean(PreferenceManager.SAM_SHOW_GROUP_SEPARATOR);
+        setDisplayMode(DisplayMode.EXPANDED);
 
         if (prefs.getAsBoolean(PreferenceManager.SAM_SHOW_REF_SEQ)) {
             sequenceTrack = new SequenceTrack("Reference sequence");
@@ -404,8 +409,11 @@ public class AlignmentTrack extends AbstractTrack implements AlignmentTrackEvent
 
         // Divide rectangle into equal height levels
         double y = inputRect.getY();
-        double h = expandedHeight;
-        if (getDisplayMode() != DisplayMode.EXPANDED) {
+        double h;
+        if (getDisplayMode() == DisplayMode.EXPANDED) {
+            h = expandedHeight;
+        } else {
+
             int visHeight = visibleRect.height;
             int depth = dataManager.getNLevels();
             if (depth == 0) {
@@ -440,12 +448,14 @@ public class AlignmentTrack extends AbstractTrack implements AlignmentTrackEvent
                     AlignmentCounts counts = dataManager.getLoadedInterval(context.getReferenceFrame().getCurrentRange()).getCounts();
                     renderer.renderAlignments(row.alignments, context, rowRectangle,
                             inputRect, renderOptions, leaveMargin, selectedReadNames, counts);
+                    row.y = y;
+                    row.h = h;
                 }
                 y += h;
             }
 
             // Draw a subtle divider line between groups
-            if (PreferenceManager.getInstance().getAsBoolean(PreferenceManager.SAM_SHOW_GROUP_SEPARATOR)) {
+            if (showGroupLine) {
                 if (groupNumber < nGroups) {
                     int borderY = (int) y + GROUP_MARGIN / 2;
                     groupBorderGraphics.drawLine(inputRect.x, borderY, inputRect.width, borderY);
@@ -826,31 +836,18 @@ public class AlignmentTrack extends AbstractTrack implements AlignmentTrackEvent
             return null;
         }
 
-        int h = getDisplayMode() == DisplayMode.EXPANDED ? expandedHeight : squishedHeight;
-//        int levelNumber = (y - renderedRect.y) / h;
-//        if (levelNumber < 0) {
-//            return null;
-//        }
-
-        int startY = alignmentsRect.y;
-        final boolean leaveMargin = getDisplayMode() == DisplayMode.EXPANDED;
-
         for (List<Row> rows : groups.values()) {
-            int endY = startY + rows.size() * h;
-            if (y >= startY && y < endY) {
-                int levelNumber = (y - startY) / h;
-                Row row = rows.get(levelNumber);
-                List<Alignment> features = row.alignments;
+            for (Row row : rows) {
+                if (y >= row.y && y <= row.y + row.h) {
+                    List<Alignment> features = row.alignments;
 
-                // No buffer for alignments,  you must zoom in far enough for them to be visible
-                int buffer = 0;
-                return (Alignment) FeatureUtils.getFeatureAt(position, buffer, features);
+                    // No buffer for alignments,  you must zoom in far enough for them to be visible
+                    int buffer = 0;
+                    return FeatureUtils.getFeatureAt(position, buffer, features);
+                }
             }
-            startY = endY + GROUP_MARGIN;
         }
-
         return null;
-
     }
 
     /**
@@ -926,7 +923,7 @@ public class AlignmentTrack extends AbstractTrack implements AlignmentTrackEvent
     }
 
     public void clearCaches() {
-        if(dataManager != null) dataManager.clear();
+        if (dataManager != null) dataManager.clear();
         if (spliceJunctionTrack != null) spliceJunctionTrack.clear();
     }
 
@@ -1005,6 +1002,67 @@ public class AlignmentTrack extends AbstractTrack implements AlignmentTrackEvent
         refresh();
     }
 
+
+    public boolean isLinkedReads() {
+        return renderOptions.linkedReads;
+    }
+
+    public void setLinkedReads(boolean linkedReads, String tag) {
+
+        renderOptions.linkedReads = linkedReads;
+        if (linkedReads == true) {
+            this.renderRollback = new RenderRollback(renderOptions, getDisplayMode());
+            renderOptions.setColorOption(ColorOption.TAG);
+            renderOptions.setColorByTag(tag);
+ //           renderOptions.setColorOption(ColorOption.MAPPED_SIZE);
+
+            if (dataManager.isPhased()) {
+                renderOptions.groupByOption = GroupOption.TAG;
+                renderOptions.setGroupByTag("HP");
+            }
+            expandedHeight = 10;
+            showGroupLine = false;
+            setDisplayMode(DisplayMode.SQUISHED);
+        } else {
+            if (this.renderRollback != null) {
+                this.renderRollback.restore(renderOptions);
+            }
+        }
+
+        dataManager.packAlignments(renderOptions);
+        refresh();
+    }
+
+    class RenderRollback {
+        ColorOption colorOption;
+        GroupOption groupByOption;
+        String groupByTag;
+        String colorByTag;
+        DisplayMode displayMode;
+        int expandedHeight;
+        boolean showGroupLine;
+
+        RenderRollback(RenderOptions renderOptions, DisplayMode displayMode) {
+            this.colorOption = renderOptions.colorOption;
+            this.groupByOption = renderOptions.groupByOption;
+            this.colorByTag = renderOptions.colorByTag;
+            this.groupByTag = renderOptions.groupByTag;
+            this.displayMode = displayMode;
+            this.expandedHeight = AlignmentTrack.this.expandedHeight;
+            this.showGroupLine = AlignmentTrack.this.showGroupLine;
+        }
+
+        void restore(RenderOptions renderOptions) {
+            renderOptions.colorOption = this.colorOption;
+            renderOptions.groupByOption = this.groupByOption;
+            renderOptions.colorByTag = this.colorByTag;
+            renderOptions.groupByTag = this.groupByTag;
+            AlignmentTrack.this.expandedHeight = this.expandedHeight;
+            AlignmentTrack.this.showGroupLine = this.showGroupLine;
+            AlignmentTrack.this.setDisplayMode(this.displayMode);
+        }
+    }
+
     public boolean isPairedArcView() {
         return this.renderOptions.isPairedArcView();
     }
@@ -1043,7 +1101,7 @@ public class AlignmentTrack extends AbstractTrack implements AlignmentTrackEvent
 
     @XmlType(name = RenderOptions.NAME)
     @XmlAccessorType(XmlAccessType.NONE)
-    public static class RenderOptions {
+    public static class RenderOptions implements Cloneable {
 
         public static final String NAME = "RenderOptions";
 
@@ -1055,17 +1113,6 @@ public class AlignmentTrack extends AbstractTrack implements AlignmentTrackEvent
         boolean flagUnmappedPairs;
         @XmlAttribute
         boolean showAllBases;
-
-        public void setShowAllBases(boolean showAllBases) {
-            this.showAllBases = showAllBases;
-            if (showAllBases) this.showMismatches = false;
-        }
-
-        public void setShowMismatches(boolean showMismatches) {
-            this.showMismatches = showMismatches;
-            if (showMismatches) this.showAllBases = false;
-        }
-
         boolean showMismatches = true;
         private boolean computeIsizes;
         @XmlAttribute
@@ -1091,7 +1138,9 @@ public class AlignmentTrack extends AbstractTrack implements AlignmentTrackEvent
         private String groupByTag;
         @XmlAttribute
         private String sortByTag;
-
+        @XmlAttribute
+        private boolean linkedReads;
+        @XmlAttribute
         private boolean flagLargeInsertions;
         private int largeInsertionsThreshold;
 
@@ -1135,6 +1184,7 @@ public class AlignmentTrack extends AbstractTrack implements AlignmentTrackEvent
             largeInsertionsThreshold = prefs.getAsInt(PreferenceManager.SAM_LARGE_INSERTIONS_THRESHOLD);
         }
 
+
         private <T extends Enum<T>> T getFromMap(Map<String, String> attributes, String key, Class<T> clazz, T defaultValue) {
             String value = attributes.get(key);
             if (value == null) {
@@ -1149,6 +1199,16 @@ public class AlignmentTrack extends AbstractTrack implements AlignmentTrackEvent
                 return defaultValue;
             }
             return value;
+        }
+
+        public void setShowAllBases(boolean showAllBases) {
+            this.showAllBases = showAllBases;
+            if (showAllBases) this.showMismatches = false;
+        }
+
+        public void setShowMismatches(boolean showMismatches) {
+            this.showMismatches = showMismatches;
+            if (showMismatches) this.showAllBases = false;
         }
 
         public boolean isPairedArcView() {
@@ -1261,6 +1321,14 @@ public class AlignmentTrack extends AbstractTrack implements AlignmentTrackEvent
         public int getLargeInsertionsThreshold() {
             return largeInsertionsThreshold;
         }
+
+        public boolean isLinkedReads() {
+            return linkedReads;
+        }
+
+        public void setLinkedReads(boolean linkedReads) {
+            this.linkedReads = linkedReads;
+        }
     }
 
     class PopupMenu extends IGVPopupMenu {
@@ -1284,6 +1352,10 @@ public class AlignmentTrack extends AbstractTrack implements AlignmentTrackEvent
             if (ionTorrent) {
                 addCopyFlowSignalDistributionToClipboardItem(e);
                 addIonTorrentAuxiliaryViews(e);
+            }
+
+            if (dataManager.isTenX()) {
+                addTenXItems();
             }
 
             addSeparator();
@@ -2174,6 +2246,43 @@ public class AlignmentTrack extends AbstractTrack implements AlignmentTrackEvent
                 });
             }
             add(groupMenu);
+        }
+
+        public void addTenXItems() {
+
+            if (dataManager.isTenX()) {
+
+                addSeparator();
+
+                final JMenuItem bxItem = new JCheckBoxMenuItem("View linked reads (BX)");
+                final JMenuItem miItem = new JCheckBoxMenuItem("View linked reads (MI)");
+
+                if(isLinkedReads()) {
+                    bxItem.setSelected("BX".equals(renderOptions.colorByTag));
+                    miItem.setSelected("MI".equals(renderOptions.colorByTag));
+                }
+                else {
+                    bxItem.setSelected(false);
+                    miItem.setSelected(false);
+                }
+
+                bxItem.addActionListener(new ActionListener() {
+                    public void actionPerformed(ActionEvent aEvt) {
+                        boolean linkedReads = bxItem.isSelected();
+                        setLinkedReads(linkedReads, "BX");
+                    }
+                });
+                add(bxItem);
+
+                miItem.addActionListener(new ActionListener() {
+                    public void actionPerformed(ActionEvent aEvt) {
+                        boolean linkedReads = miItem.isSelected();
+                        setLinkedReads(linkedReads, "MI");
+                    }
+                });
+                add(miItem);
+
+            }
         }
     }
 
