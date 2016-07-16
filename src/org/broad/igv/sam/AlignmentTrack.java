@@ -118,7 +118,7 @@ public class AlignmentTrack extends AbstractTrack implements AlignmentTrackEvent
     }
 
     public enum GroupOption {
-        STRAND, SAMPLE, READ_GROUP, FIRST_OF_PAIR_STRAND, TAG, PAIR_ORIENTATION, MATE_CHROMOSOME, NONE, SUPPLEMENTARY
+        STRAND, SAMPLE, READ_GROUP, FIRST_OF_PAIR_STRAND, TAG, PAIR_ORIENTATION, MATE_CHROMOSOME, NONE, SUPPLEMENTARY, SNV
     }
 
     public enum BisulfiteContext {
@@ -480,6 +480,12 @@ public class AlignmentTrack extends AbstractTrack implements AlignmentTrackEvent
         renderOptions.groupByOption = (option == GroupOption.NONE ? null : option);
         dataManager.packAlignments(renderOptions);
 
+    }
+
+    public void groupAlignmentsBySnv(GroupOption option, Range snv) {
+        renderOptions.groupByOption = GroupOption.SNV;
+        renderOptions.setGroupBySnv(snv);
+        dataManager.packAlignments(renderOptions);
     }
 
     public void packAlignments() {
@@ -1089,6 +1095,8 @@ public class AlignmentTrack extends AbstractTrack implements AlignmentTrackEvent
         private boolean flagLargeInsertions;
         private int largeInsertionsThreshold;
 
+        private Range groupBySnv = null;
+
         RenderOptions() {
             PreferenceManager prefs = PreferenceManager.getInstance();
 
@@ -1234,6 +1242,14 @@ public class AlignmentTrack extends AbstractTrack implements AlignmentTrackEvent
             this.groupByTag = groupByTag;
         }
 
+        public Range getGroupBySnv() {
+            return groupBySnv;
+        }
+
+        public void setGroupBySnv(Range groupBySnv) {
+            this.groupBySnv = groupBySnv;
+        }
+
         public GroupOption getGroupByOption() {
             return groupByOption;
         }
@@ -1271,7 +1287,7 @@ public class AlignmentTrack extends AbstractTrack implements AlignmentTrackEvent
             }
 
             addSeparator();
-            addGroupMenuItem();
+            addGroupMenuItem(e);
             addSortMenuItem();
             addColorByMenuItem();
             addPackMenuItem();
@@ -1453,7 +1469,13 @@ public class AlignmentTrack extends AbstractTrack implements AlignmentTrackEvent
             return mi;
         }
 
-        public void addGroupMenuItem() {//ReferenceFrame frame) {
+        public void addGroupMenuItem(final TrackClickEvent te) {//ReferenceFrame frame) {
+            final MouseEvent me = te.getMouseEvent();
+            final ReferenceFrame frame = te.getFrame();
+            final Range range = frame.getCurrentRange();
+            final String chrom = range.getChr();
+            final int chromStart = (int) frame.getChromosomePosition(me.getX());
+
             // Change track height by attribute
             JMenu groupMenu = new JMenu("Group alignments by");
             ButtonGroup group = new ButtonGroup();
@@ -1467,7 +1489,6 @@ public class AlignmentTrack extends AbstractTrack implements AlignmentTrackEvent
             mappings.put("chromosome of mate", GroupOption.MATE_CHROMOSOME);
             mappings.put("pair orientation", GroupOption.PAIR_ORIENTATION);
             mappings.put("supplementary flag", GroupOption.SUPPLEMENTARY);
-
 
             for (Map.Entry<String, GroupOption> el : mappings.entrySet()) {
                 JCheckBoxMenuItem mi = getGroupMenuItem(el.getKey(), el.getValue());
@@ -1491,6 +1512,31 @@ public class AlignmentTrack extends AbstractTrack implements AlignmentTrackEvent
             tagOption.setSelected(renderOptions.groupByOption == GroupOption.TAG);
             groupMenu.add(tagOption);
             group.add(tagOption);
+
+            Range oldSortBySnv = renderOptions.getGroupBySnv();
+            if (renderOptions.groupByOption == GroupOption.SNV) { // sorted by an SNV
+                JCheckBoxMenuItem oldSnvOption = new JCheckBoxMenuItem("SNV at " + oldSortBySnv.getChr() + ":" + Globals.DECIMAL_FORMAT.format(1+oldSortBySnv.getStart()));
+                groupMenu.add(oldSnvOption);
+                group.add(oldSnvOption);
+                oldSnvOption.setSelected(true);
+            }
+
+            if (renderOptions.groupByOption != GroupOption.SNV || oldSortBySnv == null ||
+                !oldSortBySnv.getChr().equals(chrom) || (oldSortBySnv.getStart() != chromStart)) { // not already sorted by this SNV
+                JCheckBoxMenuItem newSnvOption = new JCheckBoxMenuItem("SNV at " + chrom + ":" + Globals.DECIMAL_FORMAT.format(1+chromStart));
+                newSnvOption.addActionListener(new ActionListener() {
+                    public void actionPerformed(ActionEvent aEvt) {
+                        renderOptions.groupByOption = GroupOption.SNV;
+                        Range groupBySnv = new Range(chrom, chromStart, chromStart + 1);
+                        renderOptions.setGroupBySnv(groupBySnv);
+                        log.info("groupAlignmentTracksBySnv()");
+                        IGV.getInstance().groupAlignmentTracksBySnv(GroupOption.SNV, groupBySnv);
+                        refresh();
+                    }
+                });
+                groupMenu.add(newSnvOption);
+                group.add(newSnvOption);
+            }
 
             add(groupMenu);
         }

@@ -299,9 +299,9 @@ public class AlignmentPacker {
     }
 
     private String getGroupValue(Alignment al, AlignmentTrack.RenderOptions renderOptions) {
-
         AlignmentTrack.GroupOption groupBy = renderOptions.groupByOption;
         String tag = renderOptions.getGroupByTag();
+        Range snv = renderOptions.getGroupBySnv();
 
         switch (groupBy) {
             case STRAND:
@@ -336,6 +336,8 @@ public class AlignmentPacker {
                 }
             case SUPPLEMENTARY:
                 return String.valueOf(!al.isSupplementary());
+            case SNV:
+                return String.valueOf(al.getBase(snv.getStart()));
         }
         return null;
     }
