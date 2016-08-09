@@ -48,6 +48,8 @@ import java.awt.geom.GeneralPath;
 import java.awt.geom.QuadCurve2D;
 import java.util.*;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * @author jrobinso
@@ -73,6 +75,7 @@ public class AlignmentRenderer implements FeatureRenderer {
     private static Color smallISizeColor = new Color(0, 0, 150);
     private static Color largeISizeColor = new Color(150, 0, 0);
     private static Color purple = new Color(118, 24, 220);
+    private static Color gold = new Color(0, 160, 240);
     private static Color deletionColor = Color.black;
     private static Color skippedColor = new Color(150, 184, 200);
     private static Color unknownGapColor = new Color(0, 150, 0);
@@ -569,6 +572,7 @@ public class AlignmentRenderer implements FeatureRenderer {
      * Draw a single ungapped block in an alignment.
      */
     private void drawAlignmentBlock(Graphics2D blockGraphics, Graphics2D outlineGraphics, Graphics2D terminalGraphics,
+        Graphics2D leftClipGraphics, Graphics2D rightClipGraphics,
         boolean isNegativeStrand, int alignmentChromStart, int alignmentChromEnd, int blockChromStart, int blockChromEnd,
         int blockPxStart, int blockPxWidth, int y, int h, boolean largeEnoughForArrow, int arrowPxWidth) {
 
@@ -583,6 +587,14 @@ public class AlignmentRenderer implements FeatureRenderer {
                         blockPxEnd, blockPxEnd + (rightmost && !isNegativeStrand && largeEnoughForArrow ? arrowPxWidth : 0),
                         blockPxEnd, blockPxStart },
               yPoly = { y + h/2, y, y, y + h/2, y + h, y + h };
+        int[] xLeft = { blockPxStart,
+                        blockPxStart - (leftmost && isNegativeStrand && largeEnoughForArrow ? arrowPxWidth : 0),
+                        blockPxStart };
+        int[] xRight = { blockPxEnd,
+                         blockPxEnd + (rightmost && !isNegativeStrand && largeEnoughForArrow ? arrowPxWidth : 0),
+                         blockPxEnd };
+        int[] yLeft = { y+h, y+h/2, y};
+        int[] yRight = { y, y+h/2, y+h};
         Shape blockShape = new Polygon(xPoly, yPoly, xPoly.length);
 
         blockGraphics.fill(blockShape);
@@ -599,6 +611,16 @@ public class AlignmentRenderer implements FeatureRenderer {
             if (rightmost && !isNegativeStrand) {
                 terminalGraphics.drawLine(blockPxEnd, y, blockPxEnd, y + tH);
             }
+        }
+
+        if (leftmost && (leftClipGraphics != null)) {
+            Shape leftShape = new Polygon(xLeft, yLeft, xLeft.length);
+            leftClipGraphics.draw(leftShape);
+        }
+
+        if (rightmost && (rightClipGraphics != null)) {
+            Shape rightShape = new Polygon(xRight, yRight, xRight.length);
+            rightClipGraphics.draw(rightShape);
         }
     }
 
@@ -629,7 +651,6 @@ public class AlignmentRenderer implements FeatureRenderer {
             AlignmentCounts alignmentCounts) {
 
         AlignmentBlock[] blocks = alignment.getAlignmentBlocks();
-
         // No blocks.  Note: SAM/BAM alignments always have at least 1 block
         if (blocks == null || blocks.length == 0) {
             drawSimpleAlignment(alignment, rowRect, g, context, renderOptions.flagUnmappedPairs);
@@ -668,6 +689,29 @@ public class AlignmentRenderer implements FeatureRenderer {
         // Get a graphics context to indicate the end of a read.
         Graphics2D terminalGraphics = context.getGraphic2DForColor(Color.DARK_GRAY);
         boolean largeEnoughForArrow = (h > 10);
+
+        // Get a graphics context to mark the ends of heavily clipped reads.
+        String cigarString = alignment.getCigarString();
+        int leftClip = 0, rightClip = 0;
+        Matcher lclipMatcher = Pattern.compile("^(([0-9]+)H)?(([0-9]+)S)?").matcher(cigarString);
+        Matcher rclipMatcher = Pattern.compile("(([0-9]+)S)?(([0-9]+)H)?$").matcher(cigarString);
+        if (lclipMatcher.find()) {
+            leftClip = (lclipMatcher.group(2) == null ? 0 : Integer.parseInt(lclipMatcher.group(2),10)) +
+                       (lclipMatcher.group(4) == null ? 0 : Integer.parseInt(lclipMatcher.group(4),10));
+        }
+        if (rclipMatcher.find()) {
+            rightClip = (rclipMatcher.group(4) == null ? 0 : Integer.parseInt(rclipMatcher.group(4),10)) +
+                        (rclipMatcher.group(2) == null ? 0 : Integer.parseInt(rclipMatcher.group(2),10));
+        }
+        Graphics2D leftClipGraphics = null, rightClipGraphics = null;
+        if (leftClip > 20) {
+            leftClipGraphics = context.getGraphic2DForColor(gold);
+            leftClipGraphics.setStroke(thickStroke);
+        }
+        if (rightClip > 20) {
+            rightClipGraphics = context.getGraphic2DForColor(gold);
+            rightClipGraphics.setStroke(thickStroke);
+        }
 
         /* Process the alignment. */
         AlignmentBlock firstBlock = blocks[0], lastBlock = blocks[blocks.length - 1];
@@ -710,8 +754,8 @@ public class AlignmentRenderer implements FeatureRenderer {
                     blockChromEnd = gapChromStart,
                     blockPxWidth = (int)  Math.max(1, (blockChromEnd - blockChromStart) / locScale),
                     blockPxEnd = blockPxStart + blockPxWidth;
-                drawAlignmentBlock(g, outlineGraphics, terminalGraphics, alignment.isNegativeStrand(),
-                    alignmentChromStart, alignmentChromEnd, blockChromStart, blockChromEnd,
+                drawAlignmentBlock(g, outlineGraphics, terminalGraphics, leftClipGraphics, rightClipGraphics,
+                    alignment.isNegativeStrand(), alignmentChromStart, alignmentChromEnd, blockChromStart, blockChromEnd,
                     blockPxStart, blockPxWidth, y, h, largeEnoughForArrow, arrowPxWidth);
 
                 // Draw the gap line.
@@ -722,6 +766,12 @@ public class AlignmentRenderer implements FeatureRenderer {
                 else if (gap.getType() == SAMAlignment.SKIPPED_REGION) {
                     gapGraphics = skippedRegionGapGraphics;
                 }
+
+                int[] xPoly = { blockPxEnd, blockPxEnd, gapPxEnd, gapPxEnd },
+                      yPoly = { y + h, y, y, y + h };
+                Shape gapShape = new Polygon(xPoly, yPoly, xPoly.length);
+
+                gapGraphics.fill(gapShape);
 
                 gapGraphics.drawLine(blockPxEnd + 1, y + h / 2, gapPxEnd, y + h / 2);
 
@@ -736,9 +786,9 @@ public class AlignmentRenderer implements FeatureRenderer {
             blockPxWidth = (int)  Math.max(1, (blockChromEnd - blockChromStart) / locScale),
             blockPxEnd = blockPxStart + blockPxWidth,
             lastBlockPxEnd = blockPxEnd;
-        drawAlignmentBlock(g, outlineGraphics, terminalGraphics, alignment.isNegativeStrand(),
-            alignmentChromStart, alignmentChromEnd, blockChromStart, blockChromEnd,
-            blockPxStart, blockPxWidth, y, h, largeEnoughForArrow, arrowPxWidth);
+        drawAlignmentBlock(g, outlineGraphics, terminalGraphics, leftClipGraphics, rightClipGraphics,
+            alignment.isNegativeStrand(), alignmentChromStart, alignmentChromEnd, blockChromStart,
+            blockChromEnd, blockPxStart, blockPxWidth, y, h, largeEnoughForArrow, arrowPxWidth);
 
         // Render insertions if locScale < 1 bp / pixel (base level)
         if (locScale < 1) {
